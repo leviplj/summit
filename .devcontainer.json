@@ -1,0 +1,16 @@
+{
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "mkhl.direnv"
+      ]
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "image": "ghcr.io/cachix/devenv/devcontainer:v1.11.2",
+  "overrideCommand": false
+//   "remoteUser": "root"
+  // "updateContentCommand": "devenv test"
+}
