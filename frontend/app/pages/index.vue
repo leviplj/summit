@@ -4,7 +4,7 @@ import type { SessionStatus } from "~/composables/useChat";
 import ChatMessage from "~/components/ChatMessage.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
-  idle: { color: "bg-muted-foreground/40", pulse: false, label: "Idle" },
+  idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
   waiting: { color: "bg-yellow-400", pulse: true, label: "Waiting…" },
   thinking: { color: "bg-purple-400", pulse: true, label: "Thinking…" },
   streaming: { color: "bg-blue-400", pulse: true, label: "Responding…" },
@@ -18,6 +18,7 @@ const {
   messages,
   events,
   loading,
+  loaded,
   model,
   send,
   newSession,
@@ -139,7 +140,7 @@ watch(
             v-if="messages.length === 0 && !loading"
             class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
           >
-            Send a message to start
+            {{ loaded ? 'Send a message to start' : 'Loading…' }}
           </div>
 
           <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />

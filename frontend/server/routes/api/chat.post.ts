@@ -1,15 +1,15 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
-const sessions = new Map<string, string>(); // clientId -> agentSessionId
-
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ text: string; sessionId?: string }>(event);
-  if (!body?.text) {
-    throw createError({ statusCode: 400, message: "Missing text" });
+  const body = await readBody<{ text: string; sessionId: string }>(event);
+  if (!body?.text || !body?.sessionId) {
+    throw createError({ statusCode: 400, message: "Missing text or sessionId" });
   }
 
-  const clientSessionId = body.sessionId;
-  const agentSessionId = clientSessionId ? sessions.get(clientSessionId) : undefined;
+  const session = await getStoredSession(body.sessionId);
+  if (!session) {
+    throw createError({ statusCode: 404, message: "Session not found" });
+  }
 
   setResponseHeaders(event, {
     "Content-Type": "text/event-stream",
@@ -25,6 +25,9 @@ export default defineEventHandler(async (event) => {
 
       let currentToolName: string | null = null;
       let currentToolInput = "";
+      let assistantText = "";
+      let assistantMeta: any = null;
+      const errorMessages: typeof session.messages = [];
 
       try {
         const q = query({
@@ -33,7 +36,7 @@ export default defineEventHandler(async (event) => {
             permissionMode: "bypassPermissions",
             includePartialMessages: true,
             cwd: process.cwd(),
-            ...(agentSessionId ? { resume: agentSessionId } : {}),
+            ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
           },
         });
 
@@ -43,13 +46,8 @@ export default defineEventHandler(async (event) => {
               const data = (message as any).data ?? message;
               if (data.subtype === "init" || data.session_id) {
                 const sid = data.session_id;
-                if (sid && clientSessionId) {
-                  sessions.set(clientSessionId, sid);
-                } else if (sid) {
-                  // Send session ID to client so it can resume
-                  const newClientId = crypto.randomUUID();
-                  sessions.set(newClientId, sid);
-                  send({ type: "session", sessionId: newClientId });
+                if (sid && !session.agentSessionId) {
+                  session.agentSessionId = sid;
                 }
                 send({
                   type: "init",
@@ -75,6 +73,7 @@ export default defineEventHandler(async (event) => {
               } else if (se.type === "content_block_delta") {
                 const delta = se.delta;
                 if (delta?.type === "text_delta" && delta.text) {
+                  assistantText += delta.text;
                   send({ type: "text", text: delta.text });
                 } else if (delta?.type === "input_json_delta" && delta.partial_json) {
                   currentToolInput += delta.partial_json;
@@ -99,6 +98,7 @@ export default defineEventHandler(async (event) => {
                   for (const block of content) {
                     if (block.type === "text" && block.text) {
                       send({ type: "error", text: block.text });
+                      errorMessages.push({ id: String(Date.now()), role: "error", content: block.text });
                     }
                   }
                 }
@@ -133,6 +133,14 @@ export default defineEventHandler(async (event) => {
 
             case "result": {
               const m = message as any;
+              if (!m.is_error && m.result) {
+                assistantText = m.result;
+                assistantMeta = {
+                  duration_ms: m.duration_ms,
+                  cost_usd: m.total_cost_usd,
+                  output_tokens: m.usage?.output_tokens,
+                };
+              }
               send({
                 type: "result",
                 text: m.result,
@@ -148,7 +156,26 @@ export default defineEventHandler(async (event) => {
         }
       } catch (err: any) {
         send({ type: "error", text: err.message || String(err) });
+        errorMessages.push({ id: String(Date.now()), role: "error", content: err.message || String(err) });
       }
+
+      // Persist messages
+      session.messages.push({ id: String(Date.now() - 1), role: "user", content: body.text });
+      if (assistantText) {
+        session.messages.push({
+          id: String(Date.now()),
+          role: "assistant",
+          content: assistantText,
+          ...(assistantMeta ? { meta: assistantMeta } : {}),
+        });
+      }
+      session.messages.push(...errorMessages);
+
+      if (session.messages.filter((m) => m.role === "user").length === 1) {
+        session.title = body.text.length > 40 ? body.text.slice(0, 40) + "…" : body.text;
+      }
+
+      await saveSession(session);
 
       send({ type: "done" });
       controller.close();

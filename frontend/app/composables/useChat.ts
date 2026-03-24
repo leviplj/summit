@@ -21,7 +21,6 @@ export interface ChatSession {
   events: ToolEvent[];
   loading: boolean;
   status: SessionStatus;
-  serverSessionId: string | null;
 }
 
 function formatToolUse(tool: string, input?: Record<string, any>): string {
@@ -53,62 +52,88 @@ function formatToolUse(tool: string, input?: Record<string, any>): string {
 let _id = 0;
 const uid = () => String(++_id);
 
-function createSession(): ChatSession {
-  return {
-    id: uid(),
-    title: "New chat",
-    messages: [],
-    events: [],
-    loading: false,
-    status: "idle",
-    serverSessionId: null,
-  };
-}
-
 export function useChat() {
-  const sessions = ref<ChatSession[]>([createSession()]);
-  const activeSessionId = ref(sessions.value[0].id);
+  const sessions = ref<ChatSession[]>([]);
+  const activeSessionId = ref("");
   const model = ref("");
+  const loaded = ref(false);
 
   const activeSession = computed(
-    () => sessions.value.find((s) => s.id === activeSessionId.value)!,
+    () => sessions.value.find((s) => s.id === activeSessionId.value),
   );
-  const messages = computed(() => activeSession.value.messages);
-  const events = computed(() => activeSession.value.events);
-  const loading = computed(() => activeSession.value.loading);
+  const messages = computed(() => activeSession.value?.messages ?? []);
+  const events = computed(() => activeSession.value?.events ?? []);
+  const loading = computed(() => activeSession.value?.loading ?? false);
 
-  // Per-session streaming state
   const streamState = new Map<string, { currentId: string; assistantText: string }>();
 
-  function newSession() {
-    const s = createSession();
-    sessions.value.unshift(s);
-    activeSessionId.value = s.id;
+  async function loadSessions() {
+    try {
+      const data = await $fetch<any[]>("/api/sessions");
+      if (data.length) {
+        sessions.value = data.map((s) => ({
+          id: s.id,
+          title: s.title,
+          messages: s.messages || [],
+          events: [],
+          loading: false,
+          status: "idle" as SessionStatus,
+        }));
+        activeSessionId.value = sessions.value[0].id;
+      } else {
+        await newSession();
+      }
+    } catch {
+      await newSession();
+    }
+    loaded.value = true;
+  }
+
+  async function newSession() {
+    const id = crypto.randomUUID();
+    const session: ChatSession = {
+      id,
+      title: "New chat",
+      messages: [],
+      events: [],
+      loading: false,
+      status: "idle",
+    };
+    sessions.value.unshift(session);
+    activeSessionId.value = id;
+
+    try {
+      await $fetch("/api/sessions", {
+        method: "POST",
+        body: { id, title: "New chat" },
+      });
+    } catch {}
   }
 
   function selectSession(id: string) {
     activeSessionId.value = id;
   }
 
-  function deleteSession(id: string) {
+  async function deleteSession(id: string) {
     const idx = sessions.value.findIndex((s) => s.id === id);
     if (idx === -1) return;
     sessions.value.splice(idx, 1);
+
     if (sessions.value.length === 0) {
-      newSession();
+      await newSession();
     } else if (activeSessionId.value === id) {
       activeSessionId.value = sessions.value[0].id;
     }
+
+    try {
+      await $fetch(`/api/sessions/${id}`, { method: "DELETE" });
+    } catch {}
   }
 
   function handleEvent(session: ChatSession, msg: Record<string, any>) {
     const state = streamState.get(session.id)!;
 
     switch (msg.type) {
-      case "session":
-        session.serverSessionId = msg.sessionId;
-        break;
-
       case "init":
         if (msg.model) model.value = msg.model;
         break;
@@ -189,14 +214,13 @@ export function useChat() {
 
   async function send(text: string) {
     const session = activeSession.value;
-    if (!text.trim() || session.loading) return;
+    if (!session || !text.trim() || session.loading) return;
 
     session.messages.push({ id: uid(), role: "user", content: text });
     session.loading = true;
     session.status = "waiting";
     session.events = [];
 
-    // Set title from first user message
     if (session.messages.filter((m) => m.role === "user").length === 1) {
       session.title = text.length > 40 ? text.slice(0, 40) + "…" : text;
     }
@@ -210,7 +234,7 @@ export function useChat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, sessionId: session.serverSessionId }),
+        body: JSON.stringify({ text, sessionId: session.id }),
         signal: controller.signal,
       });
 
@@ -257,6 +281,8 @@ export function useChat() {
     streamState.delete(session.id);
   }
 
+  onMounted(loadSessions);
+
   return {
     sessions,
     activeSessionId,
@@ -264,6 +290,7 @@ export function useChat() {
     messages,
     events,
     loading,
+    loaded,
     model,
     send,
     newSession,
