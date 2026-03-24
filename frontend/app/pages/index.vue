@@ -1,6 +1,16 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Trash2, MessageSquare } from "lucide-vue-next";
+import { Plus, SendHorizontal, Trash2 } from "lucide-vue-next";
+import type { SessionStatus } from "~/composables/useChat";
 import ChatMessage from "~/components/ChatMessage.vue";
+
+const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
+  idle: { color: "bg-muted-foreground/40", pulse: false, label: "Idle" },
+  waiting: { color: "bg-yellow-400", pulse: true, label: "Waiting…" },
+  thinking: { color: "bg-purple-400", pulse: true, label: "Thinking…" },
+  streaming: { color: "bg-blue-400", pulse: true, label: "Responding…" },
+  tool: { color: "bg-orange-400", pulse: true, label: "Running tool…" },
+  error: { color: "bg-red-400", pulse: false, label: "Error" },
+};
 
 const {
   sessions,
@@ -72,8 +82,26 @@ watch(
           "
           @click="selectSession(s.id)"
         >
-          <MessageSquare class="h-4 w-4 shrink-0" />
-          <span class="flex-1 truncate">{{ s.title }}</span>
+          <span class="relative flex h-4 w-4 shrink-0 items-center justify-center">
+            <span
+              v-if="statusConfig[s.status].pulse"
+              class="absolute h-2.5 w-2.5 animate-ping rounded-full opacity-50"
+              :class="statusConfig[s.status].color"
+            />
+            <span
+              class="relative h-2 w-2 rounded-full"
+              :class="statusConfig[s.status].color"
+              :title="statusConfig[s.status].label"
+            />
+          </span>
+          <span class="flex-1 truncate">
+            <span class="block truncate">{{ s.title }}</span>
+            <span
+              v-if="s.status !== 'idle'"
+              class="block truncate text-[10px] leading-tight"
+              :class="s.status === 'error' ? 'text-red-400' : 'text-muted-foreground'"
+            >{{ statusConfig[s.status].label }}</span>
+          </span>
           <span
             v-if="sessions.length > 1"
             class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 hover:text-red-400 group-hover:opacity-100"

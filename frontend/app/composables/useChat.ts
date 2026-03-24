@@ -12,12 +12,15 @@ export interface ToolEvent {
   isError?: boolean;
 }
 
+export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "tool" | "error";
+
 export interface ChatSession {
   id: string;
   title: string;
   messages: ChatMessage[];
   events: ToolEvent[];
   loading: boolean;
+  status: SessionStatus;
   serverSessionId: string | null;
 }
 
@@ -57,6 +60,7 @@ function createSession(): ChatSession {
     messages: [],
     events: [],
     loading: false,
+    status: "idle",
     serverSessionId: null,
   };
 }
@@ -110,10 +114,12 @@ export function useChat() {
         break;
 
       case "thinking":
+        session.status = "thinking";
         session.events.push({ id: uid(), type: "thinking", label: "Thinking" });
         break;
 
       case "tool_use":
+        session.status = "tool";
         session.events = session.events.filter((e) => e.type !== "thinking");
         session.events.push({
           id: uid(),
@@ -132,6 +138,7 @@ export function useChat() {
         break;
 
       case "text":
+        session.status = "streaming";
         session.events = session.events.filter((e) => e.type !== "thinking");
         state.assistantText += msg.text;
         {
@@ -161,11 +168,13 @@ export function useChat() {
           }
         }
         session.loading = false;
+        session.status = "idle";
         session.events = [];
         break;
 
       case "done":
         session.loading = false;
+        session.status = "idle";
         session.events = [];
         break;
 
@@ -173,6 +182,7 @@ export function useChat() {
         session.events = session.events.filter((e) => e.type !== "thinking");
         session.messages.push({ id: uid(), role: "error", content: msg.text });
         session.loading = false;
+        session.status = "error";
         break;
     }
   }
@@ -183,6 +193,7 @@ export function useChat() {
 
     session.messages.push({ id: uid(), role: "user", content: text });
     session.loading = true;
+    session.status = "waiting";
     session.events = [];
 
     // Set title from first user message
@@ -235,6 +246,9 @@ export function useChat() {
     } catch (err: any) {
       if (err.name !== "AbortError") {
         session.messages.push({ id: uid(), role: "error", content: err.message });
+        session.status = "error";
+      } else {
+        session.status = "idle";
       }
       session.loading = false;
       session.events = [];
