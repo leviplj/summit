@@ -119,8 +119,10 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
     const q = query({
       prompt: text,
       options: {
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
-        cwd: process.cwd(),
+        cwd: session.worktreePath || process.cwd(),
         toolConfig: { askUserQuestion: { previewFormat: "html" } },
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
         canUseTool: async (toolName, input) => {

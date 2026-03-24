@@ -4,10 +4,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Missing id" });
   }
 
+  const wtPath = await createWorktree(body.id);
+  const branch = `summit/${body.id}`;
+
   const session: StoredSession = {
     id: body.id,
     title: body.title || "New chat",
     agentSessionId: null,
+    worktreePath: wtPath,
+    branch,
     messages: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

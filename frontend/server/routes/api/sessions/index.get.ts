@@ -9,6 +9,7 @@ export default defineEventHandler(async (): Promise<SessionListItem[]> => {
   return sessions.map((s) => ({
     id: s.id,
     title: s.title,
+    branch: s.branch || null,
     messages: s.messages,
     hasActiveQuery: activeSet.has(s.id),
   }));

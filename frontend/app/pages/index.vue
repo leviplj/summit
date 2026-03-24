@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Trash2 } from "lucide-vue-next";
+import { Plus, SendHorizontal, Trash2, GitBranch } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
@@ -18,6 +18,7 @@ const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label
 const {
   sessions,
   activeSessionId,
+  activeSession,
   messages,
   events,
   loading,
@@ -138,6 +139,13 @@ watch(
           </svg>
         </button>
         <h1 class="text-lg font-semibold text-foreground">Summit</h1>
+        <span
+          v-if="activeSession?.branch"
+          class="flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-muted-foreground"
+        >
+          <GitBranch class="h-3 w-3" />
+          {{ activeSession.branch }}
+        </span>
       </header>
 
       <!-- Messages -->

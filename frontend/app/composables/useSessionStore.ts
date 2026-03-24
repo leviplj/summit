@@ -3,6 +3,7 @@ import type { ChatMessage, SessionStatus, SessionListItem, ElicitationPayload, A
 export interface ClientSession {
   id: string;
   title: string;
+  branch: string | null;
   messages: ChatMessage[];
   events: ToolEvent[];
   loading: boolean;
@@ -44,6 +45,7 @@ export function useSessionStore() {
         sessions.value = data.map((s) => ({
           id: s.id,
           title: s.title,
+          branch: s.branch || null,
           messages: s.messages || [],
           events: [],
           loading: false,
@@ -71,6 +73,7 @@ export function useSessionStore() {
     const session: ClientSession = {
       id,
       title: "New chat",
+      branch: null,
       messages: [],
       events: [],
       loading: false,
@@ -115,6 +118,7 @@ export function useSessionStore() {
       const s = sessions.value.find((s) => s.id === id);
       if (s && stored) {
         s.title = stored.title;
+        s.branch = stored.branch || null;
         s.messages = stored.messages;
       }
     } catch {}

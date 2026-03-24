@@ -17,6 +17,8 @@ export interface StoredSession {
   id: string;
   title: string;
   agentSessionId: string | null;
+  worktreePath: string | null;
+  branch: string | null;
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
@@ -25,6 +27,7 @@ export interface StoredSession {
 export interface SessionListItem {
   id: string;
   title: string;
+  branch: string | null;
   messages: ChatMessage[];
   hasActiveQuery: boolean;
 }
