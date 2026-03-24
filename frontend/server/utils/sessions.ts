@@ -1,24 +1,23 @@
 import { readFile, writeFile, readdir, unlink, mkdir } from "fs/promises";
 import { join } from "path";
+import type { StoredSession } from "~~/shared/types";
 
+export type { StoredSession };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SESSIONS_DIR = join(process.cwd(), ".summit", "sessions");
 
-export interface StoredSession {
-  id: string;
-  title: string;
-  agentSessionId: string | null;
-  messages: Array<{
-    id: string;
-    role: "user" | "assistant" | "error";
-    content: string;
-    meta?: { duration_ms?: number; cost_usd?: number; output_tokens?: number };
-  }>;
-  createdAt: string;
-  updatedAt: string;
+let dirEnsured = false;
+async function ensureDir() {
+  if (dirEnsured) return;
+  await mkdir(SESSIONS_DIR, { recursive: true });
+  dirEnsured = true;
 }
 
-async function ensureDir() {
-  await mkdir(SESSIONS_DIR, { recursive: true });
+function validateId(id: string): void {
+  if (!UUID_RE.test(id)) {
+    throw createError({ statusCode: 400, message: "Invalid session ID" });
+  }
 }
 
 function sessionPath(id: string) {
@@ -28,19 +27,25 @@ function sessionPath(id: string) {
 export async function listSessions(): Promise<StoredSession[]> {
   await ensureDir();
   const files = await readdir(SESSIONS_DIR);
-  const sessions: StoredSession[] = [];
-  for (const f of files) {
-    if (!f.endsWith(".json")) continue;
-    try {
-      const data = await readFile(join(SESSIONS_DIR, f), "utf-8");
-      sessions.push(JSON.parse(data));
-    } catch {}
-  }
-  sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  return sessions;
+  const sessions = await Promise.all(
+    files
+      .filter((f) => f.endsWith(".json"))
+      .map(async (f) => {
+        try {
+          const data = await readFile(join(SESSIONS_DIR, f), "utf-8");
+          return JSON.parse(data) as StoredSession;
+        } catch {
+          return null;
+        }
+      }),
+  );
+  return sessions
+    .filter((s): s is StoredSession => s !== null)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function getStoredSession(id: string): Promise<StoredSession | null> {
+  validateId(id);
   try {
     const data = await readFile(sessionPath(id), "utf-8");
     return JSON.parse(data);
@@ -50,12 +55,14 @@ export async function getStoredSession(id: string): Promise<StoredSession | null
 }
 
 export async function saveSession(session: StoredSession): Promise<void> {
+  validateId(session.id);
   await ensureDir();
   session.updatedAt = new Date().toISOString();
   await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2));
 }
 
 export async function deleteSessionFile(id: string): Promise<void> {
+  validateId(id);
   try {
     await unlink(sessionPath(id));
   } catch {}

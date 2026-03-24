@@ -1,23 +1,25 @@
 <script setup lang="ts">
-import { marked } from "marked";
+import { Marked } from "marked";
+import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.min.css";
-import type { ChatMessage } from "~/composables/useChat";
+import type { ChatMessage } from "~~/shared/types";
 
 const props = defineProps<{ message: ChatMessage }>();
 
-marked.setOptions({
-  highlight(code: string, lang: string) {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  },
-  gfm: true,
-  breaks: false,
-});
+const md = new Marked(
+  markedHighlight({
+    highlight(code: string, lang: string) {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
+    },
+  }),
+  { gfm: true, breaks: false },
+);
 
-const html = computed(() => marked.parse(props.message.content) as string);
+const html = computed(() => md.parse(props.message.content) as string);
 
 const meta = computed(() => {
   const m = props.message.meta;

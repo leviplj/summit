@@ -23,6 +23,7 @@
     "highlight.js": "^11.11.1",
     "lucide-vue-next": "^1.0.0",
     "marked": "^17.0.5",
+    "marked-highlight": "^2.2.3",
     "nuxt": "^4.4.2",
     "radix-vue": "^1.9.17",
     "shadcn-nuxt": "^2.4.3",

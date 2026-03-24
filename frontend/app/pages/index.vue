@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Plus, SendHorizontal, Trash2 } from "lucide-vue-next";
-import type { SessionStatus } from "~/composables/useChat";
+import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
