@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Copy, Check } from "lucide-vue-next";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
@@ -30,10 +31,17 @@ const meta = computed(() => {
   if (m.cost_usd) parts.push(`$${m.cost_usd.toFixed(4)}`);
   return parts.join(" \u00b7 ");
 });
+
+const copied = ref(false);
+function copyMessage() {
+  navigator.clipboard.writeText(props.message.content);
+  copied.value = true;
+  setTimeout(() => { copied.value = false; }, 2000);
+}
 </script>
 
 <template>
-  <div class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+  <div class="group/msg flex flex-col" :class="message.role === 'user' ? 'items-end' : 'items-start'">
     <div
       v-if="message.role === 'user'"
       class="max-w-[80%] rounded-xl rounded-br-sm bg-primary px-4 py-3 text-primary-foreground whitespace-pre-wrap"
@@ -51,9 +59,22 @@ const meta = computed(() => {
 
     <div
       v-else-if="message.role === 'error'"
-      class="max-w-[80%] mx-auto rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-red-400"
+      class="max-w-[80%] self-center rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-red-400"
     >
       {{ message.content }}
+    </div>
+
+    <!-- Action bar below the message -->
+    <div v-if="message.role !== 'error'" class="mt-1 flex h-6 gap-1">
+      <button
+        class="rounded p-1 transition-colors hover:bg-accent hover:text-foreground"
+        :class="message.role === 'user' ? 'text-transparent group-hover/msg:text-muted-foreground' : 'text-muted-foreground'"
+        title="Copy message"
+        @click="copyMessage"
+      >
+        <Check v-if="copied" class="h-3.5 w-3.5 text-green-400" />
+        <Copy v-else class="h-3.5 w-3.5" />
+      </button>
     </div>
   </div>
 </template>

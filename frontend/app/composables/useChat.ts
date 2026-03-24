@@ -99,8 +99,16 @@ export function useChat() {
         session.loading = false;
         session.status = "idle";
         session.events = [];
+        session.askUser = null;
+        session.elicitation = null;
         streamState.delete(session.id);
         store.reloadSession(session.id);
+        break;
+
+      case "ask_user":
+        session.status = "elicitation";
+        session.events = session.events.filter((e) => e.type !== "thinking");
+        session.askUser = (event.questions as any[]) || [];
         break;
 
       case "elicitation":
@@ -149,6 +157,25 @@ export function useChat() {
         }
       },
     );
+  }
+
+  async function respondAskUser(answers: Record<string, string>) {
+    const session = store.activeSession.value;
+    if (!session?.askUser) return;
+
+    session.askUser = null;
+    session.status = "waiting";
+
+    try {
+      await $fetch(`/api/sessions/${session.id}/ask-user`, {
+        method: "POST",
+        body: { answers },
+      });
+    } catch (err: any) {
+      session.messages.push({ id: uid(), role: "error", content: err.message });
+      session.loading = false;
+      session.status = "error";
+    }
   }
 
   async function respondElicitation(action: "accept" | "decline", content?: Record<string, unknown>) {
@@ -215,6 +242,7 @@ export function useChat() {
     ...store,
     model,
     send,
+    respondAskUser,
     respondElicitation,
   };
 }

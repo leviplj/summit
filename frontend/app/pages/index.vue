@@ -3,6 +3,7 @@ import { Plus, SendHorizontal, Trash2 } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
+import AskUserQuestions from "~/components/AskUserQuestions.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -23,7 +24,9 @@ const {
   loaded,
   model,
   elicitation,
+  askUser,
   send,
+  respondAskUser,
   respondElicitation,
   newSession,
   selectSession,
@@ -48,7 +51,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 watch(
-  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length, () => elicitation.value],
+  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length, () => elicitation.value, () => askUser.value],
   () => {
     nextTick(() => {
       messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: "smooth" });
@@ -169,6 +172,14 @@ watch(
             </div>
           </div>
 
+          <!-- AskUserQuestion -->
+          <div v-if="askUser" class="flex justify-start">
+            <AskUserQuestions
+              :questions="askUser"
+              @answer="(answers) => respondAskUser(answers)"
+            />
+          </div>
+
           <!-- Elicitation form -->
           <div v-if="elicitation" class="flex justify-start">
             <ElicitationForm
@@ -177,7 +188,7 @@ watch(
             />
           </div>
 
-          <div v-if="loading && !events.length && !elicitation" class="flex justify-start">
+          <div v-if="loading && !events.length && !elicitation && !askUser" class="flex justify-start">
             <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
               <span class="thinking-dots text-muted-foreground">
                 <span>.</span><span>.</span><span>.</span>

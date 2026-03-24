@@ -39,8 +39,21 @@ export interface AppEvent {
     | "result"
     | "error"
     | "done"
-    | "elicitation";
+    | "elicitation"
+    | "ask_user";
   [key: string]: unknown;
+}
+
+export interface AskUserOption {
+  label: string;
+  description: string;
+  preview?: string;
+}
+
+export interface AskUserQuestion {
+  question: string;
+  header: string;
+  options: AskUserOption[];
 }
 
 export interface ElicitationPayload {

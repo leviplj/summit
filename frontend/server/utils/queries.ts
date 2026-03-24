@@ -16,8 +16,21 @@ interface PendingElicitation {
   resolve: (result: { action: "accept" | "decline"; content?: Record<string, unknown> }) => void;
 }
 
+interface PendingAskUser {
+  resolve: (answers: Record<string, string>) => void;
+}
+
 const active = new Map<string, ActiveQuery>();
 const pendingElicitations = new Map<string, PendingElicitation>();
+const pendingAskUser = new Map<string, PendingAskUser>();
+
+export function resolveAskUser(sessionId: string, answer: Record<string, string>) {
+  const pending = pendingAskUser.get(sessionId);
+  if (!pending) return false;
+  pending.resolve(answer);
+  pendingAskUser.delete(sessionId);
+  return true;
+}
 
 export function resolveElicitation(
   elicitationId: string,
@@ -95,6 +108,7 @@ function finalize(sessionId: string) {
     aq.listeners.clear();
     setTimeout(() => active.delete(sessionId), 60_000);
   }
+  pendingAskUser.delete(sessionId);
 }
 
 async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>, text: string, sessionId: string) {
@@ -105,10 +119,20 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
     const q = query({
       prompt: text,
       options: {
-        permissionMode: "bypassPermissions",
         includePartialMessages: true,
         cwd: process.cwd(),
+        toolConfig: { askUserQuestion: { previewFormat: "html" } },
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
+        canUseTool: async (toolName, input) => {
+          if (toolName === "AskUserQuestion") {
+            emit(sessionId, { type: "ask_user", questions: input.questions });
+            const answers = await new Promise<Record<string, string>>((resolve) => {
+              pendingAskUser.set(sessionId, { resolve });
+            });
+            return { behavior: "allow" as const, updatedInput: { ...input, answers } };
+          }
+          return { behavior: "allow" as const };
+        },
         onElicitation: async (request) => {
           const elicitationId = crypto.randomUUID();
           emit(sessionId, {
