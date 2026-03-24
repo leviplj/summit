@@ -8,6 +8,7 @@
   packages = [
     pkgs.git
     pkgs.claude-code
+    pkgs.uv
   ];
 
   # https://devenv.sh/languages/
@@ -19,12 +20,12 @@
 
   languages.python = {
     enable = true;
-    venv.enable = true;
-    venv.requirements = ./requirements.txt;
+    uv.enable = true;
+    # uv.sync.enable = true;
   };
 
   # https://devenv.sh/processes/
-  processes.server.exec = "uvicorn server:app --host 0.0.0.0 --port 8000 --reload";
+  processes.frontend.exec = "cd frontend && bun run dev --host 0.0.0.0 --port 3000";
 
   # https://devenv.sh/services/
   # services.postgres.enable = true;
