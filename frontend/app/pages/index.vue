@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { SendHorizontal } from "lucide-vue-next";
+import { Plus, SendHorizontal, Trash2, MessageSquare } from "lucide-vue-next";
 import ChatMessage from "~/components/ChatMessage.vue";
 
-const { messages, events, loading, model, send } = useChat();
+const {
+  sessions,
+  activeSessionId,
+  messages,
+  events,
+  loading,
+  model,
+  send,
+  newSession,
+  selectSession,
+  deleteSession,
+} = useChat();
 
 const input = ref("");
 const messagesEl = ref<HTMLElement>();
+const sidebarOpen = ref(true);
 
 function handleSend() {
   if (!input.value.trim() || loading.value) return;
@@ -20,7 +32,6 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-// Auto-scroll on new messages / events
 watch(
   [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length],
   () => {
@@ -32,75 +43,128 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-screen flex-col bg-background">
-    <!-- Header -->
-    <header class="flex items-center justify-between border-b border-border px-4 py-3">
-      <h1 class="text-lg font-semibold text-foreground">Summit</h1>
-      <span v-if="model" class="text-xs text-muted-foreground">{{ model }}</span>
-    </header>
-
-    <!-- Messages -->
-    <div ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
-      <div class="mx-auto flex max-w-3xl flex-col gap-4">
-        <!-- Empty state -->
-        <div
-          v-if="messages.length === 0 && !loading"
-          class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
+  <div class="flex h-screen bg-background">
+    <!-- Sidebar -->
+    <aside
+      v-show="sidebarOpen"
+      class="flex w-64 flex-col border-r border-border bg-card"
+    >
+      <div class="flex items-center justify-between p-3">
+        <span class="text-sm font-semibold text-foreground">Chats</span>
+        <button
+          class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="New chat"
+          @click="newSession"
         >
-          Send a message to start
-        </div>
+          <Plus class="h-4 w-4" />
+        </button>
+      </div>
 
-        <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
+      <nav class="flex-1 overflow-y-auto px-2 pb-2">
+        <button
+          v-for="s in sessions"
+          :key="s.id"
+          class="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+          :class="
+            s.id === activeSessionId
+              ? 'bg-accent text-foreground'
+              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+          "
+          @click="selectSession(s.id)"
+        >
+          <MessageSquare class="h-4 w-4 shrink-0" />
+          <span class="flex-1 truncate">{{ s.title }}</span>
+          <span
+            v-if="sessions.length > 1"
+            class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 hover:text-red-400 group-hover:opacity-100"
+            @click.stop="deleteSession(s.id)"
+          >
+            <Trash2 class="h-3 w-3" />
+          </span>
+        </button>
+      </nav>
 
-        <!-- Tool events -->
-        <div v-if="events.length" class="flex justify-start">
-          <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
-            <div
-              v-for="ev in events"
-              :key="ev.id"
-              class="flex items-center gap-2 text-xs"
-              :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
-            >
-              <span v-if="ev.type === 'thinking'" class="thinking-dots">
+      <div v-if="model" class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+        {{ model }}
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="flex flex-1 flex-col">
+      <!-- Header -->
+      <header class="flex items-center gap-2 border-b border-border px-4 py-3">
+        <button
+          class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          @click="sidebarOpen = !sidebarOpen"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12h18M3 6h18M3 18h18" />
+          </svg>
+        </button>
+        <h1 class="text-lg font-semibold text-foreground">Summit</h1>
+      </header>
+
+      <!-- Messages -->
+      <div ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="mx-auto flex max-w-3xl flex-col gap-4">
+          <div
+            v-if="messages.length === 0 && !loading"
+            class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
+          >
+            Send a message to start
+          </div>
+
+          <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
+
+          <!-- Tool events -->
+          <div v-if="events.length" class="flex justify-start">
+            <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
+              <div
+                v-for="ev in events"
+                :key="ev.id"
+                class="flex items-center gap-2 text-xs"
+                :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
+              >
+                <span v-if="ev.type === 'thinking'" class="thinking-dots">
+                  <span>.</span><span>.</span><span>.</span>
+                </span>
+                <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
+                <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
+                <span v-else class="text-green-400">&#10003;</span>
+                <span class="truncate">{{ ev.label }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="loading && !events.length" class="flex justify-start">
+            <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
+              <span class="thinking-dots text-muted-foreground">
                 <span>.</span><span>.</span><span>.</span>
               </span>
-              <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
-              <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
-              <span v-else class="text-green-400">&#10003;</span>
-              <span class="truncate">{{ ev.label }}</span>
             </div>
           </div>
         </div>
-
-        <!-- Loading indicator (no events) -->
-        <div v-if="loading && !events.length" class="flex justify-start">
-          <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
-            <span class="thinking-dots text-muted-foreground">
-              <span>.</span><span>.</span><span>.</span>
-            </span>
-          </div>
-        </div>
       </div>
-    </div>
 
-    <!-- Input -->
-    <div class="border-t border-border px-4 py-3">
-      <div class="mx-auto flex max-w-3xl gap-2">
-        <textarea
-          v-model="input"
-          :disabled="loading"
-          rows="1"
-          placeholder="Message Claude..."
-          class="flex-1 resize-none rounded-lg border border-input bg-secondary px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          @keydown="handleKeydown"
-        />
-        <button
-          :disabled="loading || !input.trim()"
-          class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          @click="handleSend"
-        >
-          <SendHorizontal class="h-4 w-4" />
-        </button>
+      <!-- Input -->
+      <div class="border-t border-border px-4 py-3">
+        <div class="mx-auto flex max-w-3xl gap-2">
+          <textarea
+            v-model="input"
+            :disabled="loading"
+            rows="1"
+            placeholder="Message Claude..."
+            class="flex-1 resize-none rounded-lg border border-input bg-secondary px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            @keydown="handleKeydown"
+          />
+          <button
+            :disabled="loading || !input.trim()"
+            class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            @click="handleSend"
+          >
+            <SendHorizontal class="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   </div>

@@ -12,6 +12,15 @@ export interface ToolEvent {
   isError?: boolean;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  events: ToolEvent[];
+  loading: boolean;
+  serverSessionId: string | null;
+}
+
 function formatToolUse(tool: string, input?: Record<string, any>): string {
   if (!input) return `Using ${tool}`;
   switch (tool) {
@@ -41,21 +50,59 @@ function formatToolUse(tool: string, input?: Record<string, any>): string {
 let _id = 0;
 const uid = () => String(++_id);
 
+function createSession(): ChatSession {
+  return {
+    id: uid(),
+    title: "New chat",
+    messages: [],
+    events: [],
+    loading: false,
+    serverSessionId: null,
+  };
+}
+
 export function useChat() {
-  const messages = ref<ChatMessage[]>([]);
-  const events = ref<ToolEvent[]>([]);
-  const loading = ref(false);
+  const sessions = ref<ChatSession[]>([createSession()]);
+  const activeSessionId = ref(sessions.value[0].id);
   const model = ref("");
 
-  let sessionId: string | null = null;
-  let currentId = "";
-  let assistantText = "";
-  let controller: AbortController | null = null;
+  const activeSession = computed(
+    () => sessions.value.find((s) => s.id === activeSessionId.value)!,
+  );
+  const messages = computed(() => activeSession.value.messages);
+  const events = computed(() => activeSession.value.events);
+  const loading = computed(() => activeSession.value.loading);
 
-  function handleEvent(msg: Record<string, any>) {
+  // Per-session streaming state
+  const streamState = new Map<string, { currentId: string; assistantText: string }>();
+
+  function newSession() {
+    const s = createSession();
+    sessions.value.unshift(s);
+    activeSessionId.value = s.id;
+  }
+
+  function selectSession(id: string) {
+    activeSessionId.value = id;
+  }
+
+  function deleteSession(id: string) {
+    const idx = sessions.value.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    sessions.value.splice(idx, 1);
+    if (sessions.value.length === 0) {
+      newSession();
+    } else if (activeSessionId.value === id) {
+      activeSessionId.value = sessions.value[0].id;
+    }
+  }
+
+  function handleEvent(session: ChatSession, msg: Record<string, any>) {
+    const state = streamState.get(session.id)!;
+
     switch (msg.type) {
       case "session":
-        sessionId = msg.sessionId;
+        session.serverSessionId = msg.sessionId;
         break;
 
       case "init":
@@ -63,12 +110,12 @@ export function useChat() {
         break;
 
       case "thinking":
-        events.value.push({ id: uid(), type: "thinking", label: "Thinking" });
+        session.events.push({ id: uid(), type: "thinking", label: "Thinking" });
         break;
 
       case "tool_use":
-        events.value = events.value.filter((e) => e.type !== "thinking");
-        events.value.push({
+        session.events = session.events.filter((e) => e.type !== "thinking");
+        session.events.push({
           id: uid(),
           type: "tool_use",
           label: formatToolUse(msg.tool, msg.input),
@@ -76,7 +123,7 @@ export function useChat() {
         break;
 
       case "tool_result":
-        events.value.push({
+        session.events.push({
           id: uid(),
           type: "tool_result",
           label: msg.content || (msg.is_error ? "Error" : "Done"),
@@ -85,17 +132,17 @@ export function useChat() {
         break;
 
       case "text":
-        events.value = events.value.filter((e) => e.type !== "thinking");
-        assistantText += msg.text;
+        session.events = session.events.filter((e) => e.type !== "thinking");
+        state.assistantText += msg.text;
         {
-          const existing = messages.value.find((m) => m.id === currentId);
+          const existing = session.messages.find((m) => m.id === state.currentId);
           if (existing) {
-            existing.content = assistantText;
+            existing.content = state.assistantText;
           } else {
-            messages.value.push({
-              id: currentId,
+            session.messages.push({
+              id: state.currentId,
               role: "assistant",
-              content: assistantText,
+              content: state.assistantText,
             });
           }
         }
@@ -103,7 +150,7 @@ export function useChat() {
 
       case "result":
         if (!msg.is_error && msg.text) {
-          const m = messages.value.find((m) => m.id === currentId);
+          const m = session.messages.find((m) => m.id === state.currentId);
           if (m) {
             m.content = msg.text;
             m.meta = {
@@ -113,39 +160,46 @@ export function useChat() {
             };
           }
         }
-        loading.value = false;
-        events.value = [];
+        session.loading = false;
+        session.events = [];
         break;
 
       case "done":
-        loading.value = false;
-        events.value = [];
+        session.loading = false;
+        session.events = [];
         break;
 
       case "error":
-        events.value = events.value.filter((e) => e.type !== "thinking");
-        messages.value.push({ id: uid(), role: "error", content: msg.text });
-        loading.value = false;
+        session.events = session.events.filter((e) => e.type !== "thinking");
+        session.messages.push({ id: uid(), role: "error", content: msg.text });
+        session.loading = false;
         break;
     }
   }
 
   async function send(text: string) {
-    if (!text.trim() || loading.value) return;
+    const session = activeSession.value;
+    if (!text.trim() || session.loading) return;
 
-    messages.value.push({ id: uid(), role: "user", content: text });
-    loading.value = true;
-    assistantText = "";
-    currentId = uid();
-    events.value = [];
+    session.messages.push({ id: uid(), role: "user", content: text });
+    session.loading = true;
+    session.events = [];
 
-    controller = new AbortController();
+    // Set title from first user message
+    if (session.messages.filter((m) => m.role === "user").length === 1) {
+      session.title = text.length > 40 ? text.slice(0, 40) + "…" : text;
+    }
+
+    const currentId = uid();
+    streamState.set(session.id, { currentId, assistantText: "" });
+
+    const controller = new AbortController();
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, sessionId }),
+        body: JSON.stringify({ text, sessionId: session.serverSessionId }),
         signal: controller.signal,
       });
 
@@ -168,28 +222,38 @@ export function useChat() {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
-            const data = JSON.parse(line.slice(6));
-            handleEvent(data);
+            handleEvent(session, JSON.parse(line.slice(6)));
           } catch {}
         }
       }
 
-      // Process remaining buffer
       if (buffer.startsWith("data: ")) {
         try {
-          handleEvent(JSON.parse(buffer.slice(6)));
+          handleEvent(session, JSON.parse(buffer.slice(6)));
         } catch {}
       }
     } catch (err: any) {
       if (err.name !== "AbortError") {
-        messages.value.push({ id: uid(), role: "error", content: err.message });
+        session.messages.push({ id: uid(), role: "error", content: err.message });
       }
-      loading.value = false;
-      events.value = [];
+      session.loading = false;
+      session.events = [];
     }
 
-    controller = null;
+    streamState.delete(session.id);
   }
 
-  return { messages, events, loading, model, send };
+  return {
+    sessions,
+    activeSessionId,
+    activeSession,
+    messages,
+    events,
+    loading,
+    model,
+    send,
+    newSession,
+    selectSession,
+    deleteSession,
+  };
 }
