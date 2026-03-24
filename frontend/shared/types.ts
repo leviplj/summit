@@ -11,7 +11,7 @@ export interface ChatMessageMeta {
   output_tokens?: number;
 }
 
-export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "tool" | "error";
+export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "tool" | "elicitation" | "error";
 
 export interface StoredSession {
   id: string;
@@ -38,6 +38,14 @@ export interface AppEvent {
     | "text"
     | "result"
     | "error"
-    | "done";
+    | "done"
+    | "elicitation";
   [key: string]: unknown;
+}
+
+export interface ElicitationPayload {
+  id: string;
+  serverName: string;
+  message: string;
+  schema?: Record<string, unknown>;
 }

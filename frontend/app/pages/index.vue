@@ -2,6 +2,7 @@
 import { Plus, SendHorizontal, Trash2 } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
+import ElicitationForm from "~/components/ElicitationForm.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -9,6 +10,7 @@ const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label
   thinking: { color: "bg-purple-400", pulse: true, label: "Thinking…" },
   streaming: { color: "bg-blue-400", pulse: true, label: "Responding…" },
   tool: { color: "bg-orange-400", pulse: true, label: "Running tool…" },
+  elicitation: { color: "bg-amber-400", pulse: true, label: "Needs input" },
   error: { color: "bg-red-400", pulse: false, label: "Error" },
 };
 
@@ -20,7 +22,9 @@ const {
   loading,
   loaded,
   model,
+  elicitation,
   send,
+  respondElicitation,
   newSession,
   selectSession,
   deleteSession,
@@ -44,7 +48,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 watch(
-  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length],
+  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length, () => elicitation.value],
   () => {
     nextTick(() => {
       messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: "smooth" });
@@ -165,7 +169,15 @@ watch(
             </div>
           </div>
 
-          <div v-if="loading && !events.length" class="flex justify-start">
+          <!-- Elicitation form -->
+          <div v-if="elicitation" class="flex justify-start">
+            <ElicitationForm
+              :elicitation="elicitation"
+              @respond="(action, content) => respondElicitation(action, content)"
+            />
+          </div>
+
+          <div v-if="loading && !events.length && !elicitation" class="flex justify-start">
             <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
               <span class="thinking-dots text-muted-foreground">
                 <span>.</span><span>.</span><span>.</span>

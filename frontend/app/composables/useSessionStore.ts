@@ -1,4 +1,4 @@
-import type { ChatMessage, SessionStatus, SessionListItem } from "~~/shared/types";
+import type { ChatMessage, SessionStatus, SessionListItem, ElicitationPayload } from "~~/shared/types";
 
 export interface ClientSession {
   id: string;
@@ -7,6 +7,7 @@ export interface ClientSession {
   events: ToolEvent[];
   loading: boolean;
   status: SessionStatus;
+  elicitation: ElicitationPayload | null;
 }
 
 export interface ToolEvent {
@@ -32,6 +33,7 @@ export function useSessionStore() {
   const messages = computed(() => activeSession.value?.messages ?? []);
   const events = computed(() => activeSession.value?.events ?? []);
   const loading = computed(() => activeSession.value?.loading ?? false);
+  const elicitation = computed(() => activeSession.value?.elicitation ?? null);
 
   async function loadSessions(): Promise<{ session: ClientSession; hasActiveQuery: boolean }[]> {
     try {
@@ -44,6 +46,7 @@ export function useSessionStore() {
           events: [],
           loading: false,
           status: "idle" as SessionStatus,
+          elicitation: null,
         }));
         activeSessionId.value = sessions.value[0].id;
         loaded.value = true;
@@ -69,6 +72,7 @@ export function useSessionStore() {
       events: [],
       loading: false,
       status: "idle",
+      elicitation: null,
     };
     sessions.value.unshift(session);
     activeSessionId.value = id;
@@ -120,6 +124,7 @@ export function useSessionStore() {
     events,
     loading,
     loaded,
+    elicitation,
     loadSessions,
     newSession,
     selectSession,

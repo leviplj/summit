@@ -103,6 +103,17 @@ export function useChat() {
         store.reloadSession(session.id);
         break;
 
+      case "elicitation":
+        session.status = "elicitation";
+        session.events = session.events.filter((e) => e.type !== "thinking");
+        session.elicitation = {
+          id: event.elicitationId as string,
+          serverName: event.serverName as string,
+          message: event.message as string,
+          schema: event.schema as Record<string, unknown> | undefined,
+        };
+        break;
+
       case "error":
         session.events = session.events.filter((e) => e.type !== "thinking");
         session.messages.push({ id: uid(), role: "error", content: event.text as string });
@@ -138,6 +149,26 @@ export function useChat() {
         }
       },
     );
+  }
+
+  async function respondElicitation(action: "accept" | "decline", content?: Record<string, unknown>) {
+    const session = store.activeSession.value;
+    if (!session?.elicitation) return;
+
+    const elicitationId = session.elicitation.id;
+    session.elicitation = null;
+    session.status = "waiting";
+
+    try {
+      await $fetch(`/api/sessions/${session.id}/elicitation`, {
+        method: "POST",
+        body: { elicitationId, action, content },
+      });
+    } catch (err: any) {
+      session.messages.push({ id: uid(), role: "error", content: err.message });
+      session.loading = false;
+      session.status = "error";
+    }
   }
 
   async function send(text: string) {
@@ -184,5 +215,6 @@ export function useChat() {
     ...store,
     model,
     send,
+    respondElicitation,
   };
 }

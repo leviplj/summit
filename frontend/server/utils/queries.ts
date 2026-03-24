@@ -12,7 +12,23 @@ interface ActiveQuery {
   listeners: Set<(event: StreamEvent) => void>;
 }
 
+interface PendingElicitation {
+  resolve: (result: { action: "accept" | "decline"; content?: Record<string, unknown> }) => void;
+}
+
 const active = new Map<string, ActiveQuery>();
+const pendingElicitations = new Map<string, PendingElicitation>();
+
+export function resolveElicitation(
+  elicitationId: string,
+  result: { action: "accept" | "decline"; content?: Record<string, unknown> },
+) {
+  const pending = pendingElicitations.get(elicitationId);
+  if (!pending) return false;
+  pending.resolve(result);
+  pendingElicitations.delete(elicitationId);
+  return true;
+}
 
 function emit(sessionId: string, data: AppEvent) {
   const q = active.get(sessionId);
@@ -93,6 +109,19 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
         includePartialMessages: true,
         cwd: process.cwd(),
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
+        onElicitation: async (request) => {
+          const elicitationId = crypto.randomUUID();
+          emit(sessionId, {
+            type: "elicitation",
+            elicitationId,
+            serverName: request.serverName,
+            message: request.message,
+            schema: request.requestedSchema,
+          });
+          return new Promise((resolve) => {
+            pendingElicitations.set(elicitationId, { resolve });
+          });
+        },
       },
     });
 
