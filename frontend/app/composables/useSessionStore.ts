@@ -85,10 +85,13 @@ export function useSessionStore() {
     activeSessionId.value = id;
 
     try {
-      await $fetch("/api/sessions", {
+      const created = await $fetch<any>("/api/sessions", {
         method: "POST",
         body: { id, title: "New chat" },
       });
+      if (created?.branch) {
+        session.branch = created.branch;
+      }
     } catch {}
   }
 

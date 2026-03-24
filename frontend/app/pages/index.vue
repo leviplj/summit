@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Trash2, GitBranch } from "lucide-vue-next";
+import { Plus, SendHorizontal, Trash2, GitBranch, FileCode } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
 import AskUserQuestions from "~/components/AskUserQuestions.vue";
+import ChangedFiles from "~/components/ChangedFiles.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -36,7 +37,9 @@ const {
 
 const input = ref("");
 const messagesEl = ref<HTMLElement>();
+const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
 const sidebarOpen = ref(true);
+const changesOpen = ref(false);
 
 function handleSend() {
   if (!input.value.trim() || loading.value) return;
@@ -59,6 +62,13 @@ watch(
     });
   },
 );
+
+// Auto-refresh changed files when a query finishes
+watch(loading, (isLoading, wasLoading) => {
+  if (wasLoading && !isLoading) {
+    changedFilesRef.value?.refresh();
+  }
+});
 </script>
 
 <template>
@@ -146,6 +156,15 @@ watch(
           <GitBranch class="h-3 w-3" />
           {{ activeSession.branch }}
         </span>
+        <div class="flex-1" />
+        <button
+          class="rounded-md p-1.5 transition-colors"
+          :class="changesOpen ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
+          title="Changed files"
+          @click="changesOpen = !changesOpen; if (changesOpen) changedFilesRef?.refresh()"
+        >
+          <FileCode class="h-4 w-4" />
+        </button>
       </header>
 
       <!-- Messages -->
@@ -227,5 +246,18 @@ watch(
         </div>
       </div>
     </div>
+
+    <!-- Changed files panel -->
+    <aside
+      v-show="changesOpen"
+      class="flex flex-col border-l border-border bg-card transition-[width] duration-200"
+      :class="changedFilesRef?.isViewingDiff ? 'w-[480px]' : 'w-64'"
+    >
+      <ChangedFiles
+        v-if="activeSessionId"
+        ref="changedFilesRef"
+        :session-id="activeSessionId"
+      />
+    </aside>
   </div>
 </template>
