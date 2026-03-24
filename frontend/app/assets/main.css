@@ -4,6 +4,35 @@
 
 @layer base {
   :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 3.9%;
+    --primary: 217 91% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 217 91% 50%;
+    --radius: 0.5rem;
+
+    --diff-add-bg: #d1fae5;
+    --diff-add-text: #065f46;
+    --diff-del-bg: #fee2e2;
+    --diff-del-text: #991b1b;
+    --diff-hunk-bg: #dbeafe;
+    --diff-hunk-text: #1e40af;
+    --diff-ctx-text: #6b7280;
+  }
+
+  :root.dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
     --card: 0 0% 6%;
@@ -21,7 +50,14 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 217 91% 60%;
-    --radius: 0.5rem;
+
+    --diff-add-bg: #1a3a2a;
+    --diff-add-text: #7ee787;
+    --diff-del-bg: #3d1a1e;
+    --diff-del-text: #f47067;
+    --diff-hunk-bg: #1a2333;
+    --diff-hunk-text: #79c0ff;
+    --diff-ctx-text: #8b949e;
   }
 }
 
@@ -34,9 +70,35 @@
   }
 }
 
+/* Light mode hljs overrides (base is github-dark) */
+:root:not(.dark) .hljs {
+  background: #f6f8fa;
+  color: #24292e;
+}
+:root:not(.dark) .hljs-keyword,
+:root:not(.dark) .hljs-selector-tag { color: #d73a49; }
+:root:not(.dark) .hljs-string,
+:root:not(.dark) .hljs-addition { color: #032f62; }
+:root:not(.dark) .hljs-comment,
+:root:not(.dark) .hljs-quote { color: #6a737d; }
+:root:not(.dark) .hljs-number,
+:root:not(.dark) .hljs-literal { color: #005cc5; }
+:root:not(.dark) .hljs-title,
+:root:not(.dark) .hljs-section { color: #6f42c1; }
+:root:not(.dark) .hljs-built_in { color: #e36209; }
+:root:not(.dark) .hljs-type,
+:root:not(.dark) .hljs-attr { color: #005cc5; }
+:root:not(.dark) .hljs-deletion { color: #b31d28; background: #ffeef0; }
+
 /* Markdown content in messages */
 .prose-chat pre {
-  @apply bg-black/50 border border-border rounded-lg p-3 my-2 overflow-x-auto;
+  @apply border border-border rounded-lg p-3 my-2 overflow-x-auto;
+}
+.dark .prose-chat pre {
+  @apply bg-black/50;
+}
+:root:not(.dark) .prose-chat pre {
+  @apply bg-gray-50;
 }
 .prose-chat code {
   @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
@@ -83,6 +145,12 @@
 .prose-chat hr {
   @apply border-border my-3;
 }
+
+/* Diff colors */
+.diff-add { background: var(--diff-add-bg); color: var(--diff-add-text); flex: auto; }
+.diff-del { background: var(--diff-del-bg); color: var(--diff-del-text); }
+.diff-hunk { background: var(--diff-hunk-bg); color: var(--diff-hunk-text); }
+.diff-ctx { color: var(--diff-ctx-text); }
 
 @keyframes pulse-dots {
   0%, 20% { opacity: 0; }

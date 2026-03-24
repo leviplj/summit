@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Trash2, GitBranch, FileCode } from "lucide-vue-next";
+import { Plus, SendHorizontal, Trash2, GitBranch, FileCode, Sun, Moon, Monitor } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
@@ -34,6 +34,14 @@ const {
   selectSession,
   deleteSession,
 } = useChat();
+
+const { theme, cycleTheme } = useTheme();
+
+const themeIcon = computed(() => {
+  if (theme.value === "light") return Sun;
+  if (theme.value === "dark") return Moon;
+  return Monitor;
+});
 
 const input = ref("");
 const messagesEl = ref<HTMLElement>();
@@ -157,6 +165,13 @@ watch(loading, (isLoading, wasLoading) => {
           {{ activeSession.branch }}
         </span>
         <div class="flex-1" />
+        <button
+          class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="`Theme: ${theme}`"
+          @click="cycleTheme"
+        >
+          <component :is="themeIcon" class="h-4 w-4" />
+        </button>
         <button
           class="rounded-md p-1.5 transition-colors"
           :class="changesOpen ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"

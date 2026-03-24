@@ -160,10 +160,10 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
 ><div
           class="px-3 py-px"
           :class="{
-            'bg-green-500/15 text-green-300': line.type === 'add',
-            'bg-red-500/15 text-red-300': line.type === 'del',
-            'bg-blue-500/10 text-blue-400': line.type === 'hunk',
-            'text-muted-foreground': line.type === 'ctx',
+            'diff-add': line.type === 'add',
+            'diff-del': line.type === 'del',
+            'diff-hunk font-medium': line.type === 'hunk',
+            'diff-ctx': line.type === 'ctx',
           }"
 >{{ line.text }}</div></template></pre>
     </div>

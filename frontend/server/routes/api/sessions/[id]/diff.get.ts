@@ -28,13 +28,13 @@ export default defineEventHandler(async (event) => {
       { cwd: session.worktreePath, maxBuffer: 1024 * 1024 },
     ).catch(() => ({ stdout: "" }));
 
-    // If no diff against HEAD, file might be untracked — show full content
+    // If no diff against HEAD, file might be untracked — show full content as additions
     if (!stdout) {
       const { stdout: content } = await exec(
         "git",
-        ["diff", "--no-index", "/dev/null", filePath],
+        ["diff", "--no-index", "--", "/dev/null", filePath],
         { cwd: session.worktreePath, maxBuffer: 1024 * 1024 },
-      ).catch(() => ({ stdout: "" }));
+      ).catch((err: any) => ({ stdout: err.stdout || "" }));
       return { diff: content };
     }
 
