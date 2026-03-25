@@ -156,6 +156,7 @@ watch(loading, (isLoading, wasLoading) => {
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
         </button>
+        <img src="/logo.png" alt="Summit" class="h-6 w-6 rounded" />
         <h1 class="text-lg font-semibold text-foreground">Summit</h1>
         <span
           v-if="activeSession?.branch"
