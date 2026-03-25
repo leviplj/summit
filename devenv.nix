@@ -31,13 +31,21 @@
   # services.postgres.enable = true;
 
   # https://devenv.sh/scripts/
-  scripts.hello.exec = ''
-    echo hello from $GREET
-  '';
+  scripts = {
+      bun = {
+        exec = ''
+          exec ${config.languages.javascript.bun.package}/bin/bun "$@"
+        '';
+      };
 
-  scripts.bun.exec = ''
-    exec ${config.languages.javascript.bun.package}/bin/bun "$@"
-  '';
+    # OpenSpec CLI for API specification management
+    openspec = {
+      exec = ''
+        ${pkgs.bun}/bin/bunx @fission-ai/openspec@latest "$@"
+      '';
+      description = "Run OpenSpec CLI";
+    };
+  };
 
   # https://devenv.sh/basics/
   enterShell = ''
