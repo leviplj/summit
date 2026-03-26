@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor, Search, X, MessageSquareText } from "lucide-vue-next";
+import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor, Search, X, MessageSquareText, FolderGit2, Pencil } from "lucide-vue-next";
 import type { SessionStatus, Project } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
@@ -157,6 +157,15 @@ function handleSelectProject(id: string | null) {
     projectStore.activeProjectId.value = null;
     localStorage.removeItem("summit:activeProjectId");
   }
+  // Select first session for the new project, or clear selection
+  nextTick(() => {
+    const matching = projectFilteredSessions.value;
+    if (matching.length > 0) {
+      selectSession(matching[0].id);
+    } else {
+      selectSession("");
+    }
+  });
 }
 
 function handleCreateProject() {
@@ -193,6 +202,15 @@ async function handleDeleteProject(id: string) {
     projectDialogError.value = err.data?.message || err.message || "Failed to delete project";
   }
 }
+
+const showProjectDetails = computed(() => {
+  if (!activeProject.value) return false;
+  if (!activeSessionId.value) return true;
+  // Show project details if current session belongs to a different project
+  const session = activeSession.value;
+  if (session && session.projectId !== projectStore.activeProjectId.value) return true;
+  return false;
+});
 
 // Load projects on mount
 onMounted(() => {
@@ -379,8 +397,59 @@ onMounted(() => {
         </button>
       </header>
 
+      <!-- Project details (no session selected) -->
+      <div v-if="showProjectDetails" class="flex flex-1 items-center justify-center overflow-y-auto px-4 py-6">
+        <div class="w-full max-w-md space-y-6">
+          <div class="text-center">
+            <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-accent">
+              <FolderGit2 class="h-6 w-6 text-foreground" />
+            </div>
+            <h2 class="text-lg font-semibold text-foreground">{{ activeProject!.name }}</h2>
+            <p class="mt-1 text-xs text-muted-foreground">
+              {{ activeProject!.repos.length }} {{ activeProject!.repos.length === 1 ? 'repository' : 'repositories' }}
+            </p>
+          </div>
+
+          <div class="rounded-lg border border-border bg-card">
+            <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+              <span class="text-xs font-semibold text-foreground">Repositories</span>
+              <button
+                class="flex items-center gap-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Edit project"
+                @click="handleEditProject(activeProject!)"
+              >
+                <Pencil class="h-3 w-3" />
+              </button>
+            </div>
+            <div class="divide-y divide-border">
+              <div
+                v-for="repo in activeProject!.repos"
+                :key="repo.name"
+                class="flex items-center gap-3 px-4 py-3"
+              >
+                <FolderGit2 class="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-foreground">{{ repo.name }}</div>
+                  <div class="truncate text-xs text-muted-foreground" :title="repo.path">{{ repo.path }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="text-center">
+            <button
+              class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              @click="handleNewSession"
+            >
+              <Plus class="h-4 w-4" />
+              New chat
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Messages -->
-      <div ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
+      <div v-else ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
         <div class="mx-auto flex max-w-3xl flex-col gap-4">
           <div
             v-if="messages.length === 0 && !loading"
@@ -438,7 +507,7 @@ onMounted(() => {
       </div>
 
       <!-- Input -->
-      <div class="border-t border-border px-4 py-3">
+      <div v-if="!showProjectDetails" class="border-t border-border px-4 py-3">
         <div class="mx-auto flex max-w-3xl gap-2">
           <textarea
             ref="inputEl"
