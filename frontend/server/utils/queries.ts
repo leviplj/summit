@@ -159,7 +159,13 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: `IMPORTANT: Your working directory is "${session.worktreePath || process.cwd()}". Always create and edit files within this directory. Never write files to the user's home directory or any path outside the working directory unless the user explicitly asks you to.`,
+          append: `IMPORTANT: Your working directory is current working directory.
+Always create and edit files within this directory.
+Never write files to the user's home directory or any path outside the working directory unless the user explicitly asks you to.
+
+You have access to the following repos:
+${Object.entries(session.worktrees).map(([repo, path]) => `- ${repo}: ${path}`).join("\n")}
+`,
         },
         cwd: resolvedCwd,
         ...(getSessionAdditionalDirs(session).length > 0

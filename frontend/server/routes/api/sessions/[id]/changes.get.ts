@@ -115,7 +115,8 @@ export default defineEventHandler(async (event) => {
 
   try {
     const worktrees = session.worktrees;
-    const hasMultiRepo = worktrees && Object.keys(worktrees).length > 0;
+    const repoNames = worktrees ? Object.keys(worktrees) : [];
+    const hasMultiRepo = repoNames.length > 1;
 
     if (hasMultiRepo) {
       const repoChanges: Record<string, FileChange[]> = {};
@@ -132,12 +133,13 @@ export default defineEventHandler(async (event) => {
       return { repoChanges, sourceBranch };
     }
 
-    // Legacy single-repo
-    if (!session.worktreePath) {
+    // Single-repo (project or legacy)
+    const wtPath = repoNames.length === 1 ? worktrees[repoNames[0]] : session.worktreePath;
+    if (!wtPath) {
       return { files: [], sourceBranch: "main" };
     }
 
-    const result = await getRepoChanges(session.worktreePath);
+    const result = await getRepoChanges(wtPath);
     return { files: result.files, sourceBranch: result.sourceBranch };
   } catch (err: any) {
     throw createError({ statusCode: 500, statusMessage: err.message });
