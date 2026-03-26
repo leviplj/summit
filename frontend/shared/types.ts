@@ -11,7 +11,7 @@ export interface ChatMessageMeta {
   output_tokens?: number;
 }
 
-export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "tool" | "elicitation" | "error";
+export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "tool" | "elicitation" | "ask_user" | "error";
 
 export interface StoredSession {
   id: string;

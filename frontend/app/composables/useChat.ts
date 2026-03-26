@@ -44,13 +44,15 @@ export function useChat() {
         break;
 
       case "tool_use":
-        session.status = "tool";
+        session.status = event.tool === "AskUserQuestion" ? "ask_user" : "tool";
         session.events = session.events.filter((e) => e.type !== "thinking");
-        session.events.push({
-          id: uid(),
-          type: "tool_use",
-          label: formatToolUse(event.tool as string, event.input as Record<string, any>),
-        });
+        if (event.tool !== "AskUserQuestion") {
+          session.events.push({
+            id: uid(),
+            type: "tool_use",
+            label: formatToolUse(event.tool as string, event.input as Record<string, any>),
+          });
+        }
         break;
 
       case "tool_result":
@@ -106,7 +108,7 @@ export function useChat() {
         break;
 
       case "ask_user":
-        session.status = "elicitation";
+        session.status = "ask_user";
         session.events = session.events.filter((e) => e.type !== "thinking");
         session.askUser = (event.questions as any[]) || [];
         break;

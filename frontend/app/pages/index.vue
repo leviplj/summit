@@ -18,6 +18,7 @@ const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label
   streaming: { color: "bg-blue-400", pulse: true, label: "Responding…" },
   tool: { color: "bg-orange-400", pulse: true, label: "Running tool…" },
   elicitation: { color: "bg-amber-400", pulse: true, label: "Needs input" },
+  ask_user: { color: "bg-cyan-400", pulse: true, label: "Needs your input" },
   error: { color: "bg-red-400", pulse: false, label: "Error" },
 };
 
@@ -203,6 +204,18 @@ async function handleDeleteProject(id: string) {
   }
 }
 
+// Projects that have sessions needing user attention
+const attentionProjectIds = computed(() => {
+  const ids = new Set<string>();
+  for (const s of sessions.value) {
+    console.log(`Session ${s.id} status:`, s.status);
+    if ((s.status === "ask_user" || s.status === "elicitation") && s.projectId) {
+      ids.add(s.projectId);
+    }
+  }
+  return ids;
+});
+
 const showProjectDetails = computed(() => {
   if (!activeProject.value) return false;
   if (!activeSessionId.value) return true;
@@ -241,6 +254,7 @@ onMounted(() => {
         v-if="projects.length > 0"
         :projects="projects"
         :active-project="activeProject"
+        :attention-project-ids="attentionProjectIds"
         @select="handleSelectProject"
         @create="handleCreateProject"
         @edit="handleEditProject"
@@ -328,7 +342,12 @@ onMounted(() => {
             <span
               v-if="s.status !== 'idle'"
               class="block truncate text-[10px] leading-tight"
-              :class="s.status === 'error' ? 'text-red-400' : 'text-muted-foreground'"
+              :class="{
+                'text-red-400': s.status === 'error',
+                'text-cyan-400': s.status === 'ask_user',
+                'text-amber-400': s.status === 'elicitation',
+                'text-muted-foreground': s.status !== 'error' && s.status !== 'ask_user' && s.status !== 'elicitation',
+              }"
             >{{ statusConfig[s.status].label }}</span>
             <span
               v-if="fullTextEnabled && searchQuery && fullTextResults.find((r) => r.sessionId === s.id) && !s.title.toLowerCase().includes(searchQuery.toLowerCase())"

@@ -165,6 +165,10 @@ Never write files to the user's home directory or any path outside the working d
 
 You have access to the following repos:
 ${Object.entries(session.worktrees).map(([repo, path]) => `- ${repo}: ${path}`).join("\n")}
+
+IMPORTANT: If you are unsure about what to do, ask the user for clarification instead of making assumptions. Always ask before performing any action that could modify files or have side effects.
+
+IMPORTANT: If you have a multiple choices question, use the AskUserQuestion tool to ask the user.
 `,
         },
         cwd: resolvedCwd,

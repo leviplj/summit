@@ -5,6 +5,7 @@ import type { Project } from "~~/shared/types";
 const props = defineProps<{
   projects: Project[];
   activeProject: Project | null;
+  attentionProjectIds?: Set<string>;
 }>();
 
 const emit = defineEmits<{
@@ -37,7 +38,13 @@ onUnmounted(() => document.removeEventListener("click", handleClickOutside));
       class="flex w-full items-center gap-2 rounded-md border border-input bg-secondary px-2 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
       @click.stop="open = !open"
     >
-      <FolderGit2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span class="relative">
+        <FolderGit2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span
+          v-if="attentionProjectIds?.size && (!activeProject || !attentionProjectIds.has(activeProject.id))"
+          class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-cyan-400"
+        />
+      </span>
       <span class="flex-1 truncate text-left">
         {{ activeProject?.name || 'All Sessions' }}
       </span>
@@ -63,7 +70,13 @@ onUnmounted(() => document.removeEventListener("click", handleClickOutside));
           :class="p.id === activeProject?.id ? 'bg-accent/50 text-foreground' : 'text-muted-foreground'"
           @click.stop="select(p.id)"
         >
-          <FolderGit2 class="h-3 w-3 shrink-0" />
+          <span class="relative">
+            <FolderGit2 class="h-3 w-3 shrink-0" />
+            <span
+              v-if="attentionProjectIds?.has(p.id)"
+              class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-cyan-400"
+            />
+          </span>
           <span class="flex-1 truncate">{{ p.name }}</span>
           <span class="shrink-0 text-[10px] text-muted-foreground">{{ p.repos.length }} repo{{ p.repos.length !== 1 ? 's' : '' }}</span>
           <button
