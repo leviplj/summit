@@ -132,15 +132,19 @@ export function useSessionStore() {
     activeSessionId.value = id;
   }
 
-  async function deleteSession(id: string) {
+  async function deleteSession(id: string, projectId?: string | null) {
     const idx = sessions.value.findIndex((s) => s.id === id);
     if (idx === -1) return;
+    const deletedSession = sessions.value[idx];
     sessions.value.splice(idx, 1);
 
-    if (sessions.value.length === 0) {
-      activeSessionId.value = "";
-    } else if (activeSessionId.value === id) {
-      activeSessionId.value = sessions.value[0].id;
+    if (activeSessionId.value === id) {
+      // Find next session within the same project
+      const pid = projectId !== undefined ? projectId : deletedSession.projectId;
+      const sameProjSessions = pid
+        ? sessions.value.filter((s) => s.projectId === pid)
+        : sessions.value;
+      activeSessionId.value = sameProjSessions.length > 0 ? sameProjSessions[0].id : "";
     }
 
     try {
