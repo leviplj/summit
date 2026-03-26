@@ -168,8 +168,8 @@ watch(loading, (isLoading, wasLoading) => {
         </button>
       </nav>
 
-      <div v-if="model || sessionCost" class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-        <div v-if="model">{{ model }}</div>
+      <div v-if="activeSession?.model || model || sessionCost" class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+        <div v-if="activeSession?.model || model">{{ activeSession?.model || model }}</div>
         <div v-if="sessionCost">{{ sessionCost.totalTokens.toLocaleString() }} tokens · ${{ sessionCost.totalCost.toFixed(4) }}</div>
       </div>
     </aside>
