@@ -6,6 +6,7 @@ import ElicitationForm from "~/components/ElicitationForm.vue";
 import AskUserQuestions from "~/components/AskUserQuestions.vue";
 import ChangedFiles from "~/components/ChangedFiles.vue";
 import ModelSelector from "~/components/ModelSelector.vue";
+import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -35,6 +36,8 @@ const {
   updateModel,
   newSession,
   selectSession,
+  selectPrevSession,
+  selectNextSession,
   deleteSession,
 } = useChat();
 
@@ -49,9 +52,20 @@ const themeIcon = computed(() => {
 const input = ref("");
 const cancelling = ref(false);
 const messagesEl = ref<HTMLElement>();
+const inputEl = ref<HTMLTextAreaElement>();
 const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
 const sidebarOpen = ref(true);
 const changesOpen = ref(false);
+
+const { helpOpen, shortcuts } = useKeyboardShortcuts({
+  sidebarOpen,
+  changesOpen,
+  refreshChanges: () => changedFilesRef.value?.refresh(),
+  newSession,
+  selectPrevSession,
+  selectNextSession,
+  focusInput: () => inputEl.value?.focus(),
+});
 
 function handleSend() {
   if (!input.value.trim() || loading.value) return;
@@ -265,6 +279,7 @@ watch(loading, (isLoading, wasLoading) => {
       <div class="border-t border-border px-4 py-3">
         <div class="mx-auto flex max-w-3xl gap-2">
           <textarea
+            ref="inputEl"
             v-model="input"
             :disabled="loading"
             rows="1"
@@ -305,5 +320,12 @@ watch(loading, (isLoading, wasLoading) => {
         :session-id="activeSessionId"
       />
     </aside>
+
+    <!-- Keyboard shortcuts help -->
+    <KeyboardShortcutsHelp
+      v-if="helpOpen"
+      :shortcuts="shortcuts"
+      @close="helpOpen = false"
+    />
   </div>
 </template>

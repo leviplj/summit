@@ -118,6 +118,16 @@ export function useSessionStore() {
     } catch {}
   }
 
+  function selectPrevSession() {
+    const idx = sessions.value.findIndex((s) => s.id === activeSessionId.value);
+    if (idx > 0) activeSessionId.value = sessions.value[idx - 1].id;
+  }
+
+  function selectNextSession() {
+    const idx = sessions.value.findIndex((s) => s.id === activeSessionId.value);
+    if (idx >= 0 && idx < sessions.value.length - 1) activeSessionId.value = sessions.value[idx + 1].id;
+  }
+
   async function updateModel(sessionId: string, model: string | null) {
     const s = sessions.value.find((s) => s.id === sessionId);
     if (s) s.model = model;
@@ -154,6 +164,8 @@ export function useSessionStore() {
     loadSessions,
     newSession,
     selectSession,
+    selectPrevSession,
+    selectNextSession,
     deleteSession,
     reloadSession,
     updateModel,
