@@ -1,58 +1,51 @@
 ## 1. Shared Types
 
-- [ ] 1.1 Add `staged: boolean` field to `FileChange` interface (in `changes.get.ts` and `ChangedFiles.vue`)
-- [ ] 1.2 Add `CommitResult` type: `{ ok: boolean, hash?: string, error?: string }`
-- [ ] 1.3 Add `PullRequestResult` type: `{ ok: boolean, url?: string, error?: string }`
+- [x] 1.1 Add `uncommitted` and `staged` boolean fields to `FileChange` interface in `shared/types.ts`
 
 ## 2. Git Server Util
 
-- [ ] 2.1 Create `server/utils/git.ts` with `stageFiles(worktreePath: string, paths: string[]): Promise<void>` — runs `git add` for the given paths
-- [ ] 2.2 Add `unstageFiles(worktreePath: string, paths: string[]): Promise<void>` — runs `git reset HEAD --` for the given paths
-- [ ] 2.3 Add `createCommit(worktreePath: string, message: string): Promise<string>` — runs `git commit -m`, returns short commit hash
-- [ ] 2.4 Add `pushBranch(worktreePath: string, branch: string): Promise<void>` — runs `git push -u origin <branch>`
-- [ ] 2.5 Add `createPullRequest(worktreePath: string, title: string, body: string): Promise<string>` — runs `gh pr create`, returns PR URL
-- [ ] 2.6 Add `checkGhAvailable(): Promise<boolean>` — runs `gh auth status` and returns whether `gh` is installed and authenticated
-- [ ] 2.7 Add `getBranchCommitCount(worktreePath: string): Promise<number>` — runs `git rev-list --count HEAD ^<merge-base>` to determine how many commits the branch has ahead of its parent
+- [x] 2.1 Create `server/utils/git.ts` with `stageFiles`, `unstageFiles`, `createCommit`
+- [x] 2.2 Add `getDefaultBranch` — detects main/master branch name
+- [x] 2.3 Add `getMergeBase` — returns fork-point commit hash for session diff
+- [x] 2.4 Add `getMainRepoRoot` — resolves main repo root from worktree via git-common-dir
+- [x] 2.5 Add `mergeBranch` — merges session branch into source at main repo root
 
 ## 3. Git API Routes
 
-- [ ] 3.1 Create `POST /api/sessions/[id]/git/stage.post.ts` — validates session + worktree, calls `stageFiles`, returns `{ ok: true }`
-- [ ] 3.2 Create `POST /api/sessions/[id]/git/unstage.post.ts` — validates session + worktree, calls `unstageFiles`, returns `{ ok: true }`
-- [ ] 3.3 Create `POST /api/sessions/[id]/git/commit.post.ts` — validates session + worktree + message not empty, calls `createCommit`, returns `{ ok: true, hash }`
-- [ ] 3.4 Create `POST /api/sessions/[id]/git/push.post.ts` — validates session + worktree, calls `pushBranch`, returns `{ ok: true }`
-- [ ] 3.5 Create `POST /api/sessions/[id]/git/pull-request.post.ts` — validates session + worktree + title not empty, checks `gh` availability, calls `pushBranch` then `createPullRequest`, returns `{ ok: true, url }`
+- [x] 3.1 Create `POST /api/sessions/[id]/git/stage` — validates session + worktree, stages files
+- [x] 3.2 Create `POST /api/sessions/[id]/git/unstage` — validates session + worktree, unstages files
+- [x] 3.3 Create `POST /api/sessions/[id]/git/commit` — validates session + worktree + message, creates commit
+- [x] 3.4 Create `POST /api/sessions/[id]/git/merge` — validates session + worktree + branch, merges to source
 
-## 4. Changed Files Endpoint Update
+## 4. Changed Files Endpoint — Session Diff
 
-- [ ] 4.1 Update `changes.get.ts` to parse `git status --porcelain` index vs working-tree columns separately, producing entries with `staged: true` or `staged: false`
-- [ ] 4.2 Handle partially staged files by emitting two entries (one staged, one unstaged) for the same path
-- [ ] 4.3 Include numstat data for both staged (`git diff --cached --numstat`) and unstaged (`git diff --numstat`) changes
+- [x] 4.1 Diff against merge-base (full session diff: committed + uncommitted) instead of just `git status`
+- [x] 4.2 Annotate each file with `uncommitted` and `staged` flags from `git status --porcelain`
+- [x] 4.3 Include untracked files that appear in porcelain but not in merge-base diff
+- [x] 4.4 Numstat against merge-base for accurate addition/deletion counts
 
-## 5. Frontend: Commit Panel in ChangedFiles
+## 5. Diff Endpoint — Session Diff
 
-- [ ] 5.1 Update `ChangedFiles.vue` to group files under "Staged" and "Unstaged" section headers
-- [ ] 5.2 Add a checkbox per file that calls the stage or unstage API on toggle
-- [ ] 5.3 Add "Stage All" button in the unstaged section header and "Unstage All" button in the staged section header
-- [ ] 5.4 Add commit message text input below the staged files section
-- [ ] 5.5 Add "Commit" button that calls the commit API and refreshes the file list on success
-- [ ] 5.6 Disable the commit button when no files are staged, message is empty, or a query is active
+- [x] 5.1 Diff against merge-base instead of HEAD, showing full session change per file
 
-## 6. Frontend: PR Creation Dialog
+## 6. Frontend: Unified Session Changes Panel
 
-- [ ] 6.1 Create `PullRequestDialog.vue` component with title input, body textarea, and submit/cancel buttons
-- [ ] 6.2 Pre-fill the title field with the latest commit message (fetched from session or passed as prop)
-- [ ] 6.3 On submit: show loading state, call the pull-request API, display the resulting PR URL as a link on success
-- [ ] 6.4 Display error messages in the dialog on failure with a retry option
-- [ ] 6.5 Add close behavior: Escape key, click outside, and close button
+- [x] 6.1 Single file list showing all session changes (merge-base to working tree)
+- [x] 6.2 Amber dot indicator on files with uncommitted changes
+- [x] 6.3 Staging section (staged/unstaged with checkboxes) only when uncommitted files exist
+- [x] 6.4 Stage All / Unstage All buttons
+- [x] 6.5 Commit message textarea and Commit button (disabled when no staged files or empty message)
+- [x] 6.6 Merge to Source button (disabled when uncommitted files exist)
+- [x] 6.7 Success/error messages for commit and merge operations
+- [x] 6.8 Merge button shows source branch name (e.g., "Merge into main")
+- [x] 6.9 Source branch name returned from changes endpoint
+- [x] 6.10 All git API routes return descriptive stderr error messages on failure
 
-## 7. Frontend: Create PR Button
+## 7. AI-Generated Commit Messages
 
-- [ ] 7.1 Add "Create PR" button in the `ChangedFiles.vue` panel header
-- [ ] 7.2 Conditionally show the button only when the session branch has commits (check via an API call or new endpoint that returns commit count)
-- [ ] 7.3 Wire the button to open the `PullRequestDialog.vue` modal
-
-## 8. Error Handling
-
-- [ ] 8.1 All git API routes return descriptive error messages from git/gh stderr on failure
-- [ ] 8.2 The PR endpoint returns a specific error message when `gh` is not installed, including install instructions
-- [ ] 8.3 The UI displays error messages inline (commit panel) or in the dialog (PR creation) with clear user-facing text
+- [x] 7.1 Create `POST /api/sessions/[id]/git/generate-message` endpoint using Claude Agent SDK
+- [x] 7.2 Send staged diff (`git diff --cached`) to Haiku with `maxTurns: 1`, `allowedTools: []`
+- [x] 7.3 Truncate diff to 8KB before sending to limit token usage
+- [x] 7.4 Clean up response (strip quotes, prefixes)
+- [x] 7.5 Add sparkles icon button in commit textarea to trigger generation
+- [x] 7.6 Show spinner (Loader2) while generating, sparkles when idle

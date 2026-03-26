@@ -21,14 +21,21 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Try staged + unstaged diff first
+    let mergeBase: string;
+    try {
+      mergeBase = await getMergeBase(session.worktreePath);
+    } catch {
+      mergeBase = "HEAD";
+    }
+
+    // Diff from merge-base to working tree — shows the full session change for this file
     const { stdout } = await exec(
       "git",
-      ["diff", "HEAD", "--", filePath],
+      ["diff", mergeBase, "--", filePath],
       { cwd: session.worktreePath, maxBuffer: 1024 * 1024 },
     ).catch(() => ({ stdout: "" }));
 
-    // If no diff against HEAD, file might be untracked — show full content as additions
+    // If no diff (file might be untracked), show full content as additions
     if (!stdout) {
       const { stdout: content } = await exec(
         "git",

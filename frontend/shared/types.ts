@@ -68,3 +68,12 @@ export interface ElicitationPayload {
   message: string;
   schema?: Record<string, unknown>;
 }
+
+export interface FileChange {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  additions: number;
+  deletions: number;
+  uncommitted: boolean;
+  staged: boolean;
+}

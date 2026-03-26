@@ -3,5 +3,5 @@
 - [x] keyboard-shortcuts (13 tasks) — Global keyboard shortcuts
 - [x] cost-tracking (9 tasks) — Per-message and session cost display
 - [x] session-search (23 tasks) — Search/filter sessions
-- [ ] commit-and-pr-management (35 tasks) — Git commit and PR creation from UI
+- [x] commit-and-pr-management — Git commit, staging, and merge from UI
 - [ ] multi-project-support (32 tasks) — Multi-repo project support
