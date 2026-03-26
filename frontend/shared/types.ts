@@ -50,7 +50,8 @@ export interface AppEvent {
     | "done"
     | "elicitation"
     | "ask_user"
-    | "cancelled";
+    | "cancelled"
+    | "dev_server";
   [key: string]: unknown;
 }
 
@@ -73,10 +74,24 @@ export interface ElicitationPayload {
   schema?: Record<string, unknown>;
 }
 
+export interface DevServerConfig {
+  command: string;
+  basePort: number;
+  repo?: string;
+}
+
+export interface DevServerStatus {
+  sessionId: string;
+  status: "stopped" | "starting" | "running" | "error";
+  port: number | null;
+  error?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   repos: Array<{ name: string; path: string }>;
+  devServer?: DevServerConfig;
   createdAt: string;
   updatedAt: string;
 }

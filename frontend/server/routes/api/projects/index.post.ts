@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ name: string; repos: Array<{ name: string; path: string }> }>(event);
+  const body = await readBody<{ name: string; repos: Array<{ name: string; path: string }>; devServer?: { command: string; basePort: number; repo?: string } }>(event);
   if (!body?.name?.trim()) {
     throw createError({ statusCode: 400, message: "Missing project name" });
   }
@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
     id: crypto.randomUUID(),
     name: body.name.trim(),
     repos: body.repos,
+    ...(body.devServer ? { devServer: body.devServer } : {}),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

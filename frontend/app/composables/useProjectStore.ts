@@ -33,17 +33,17 @@ export function useProjectStore() {
     localStorage.setItem("summit:activeProjectId", id);
   }
 
-  async function createProject(name: string, repos: Array<{ name: string; path: string }>) {
+  async function createProject(name: string, repos: Array<{ name: string; path: string }>, devServer?: { command: string; basePort: number; repo?: string }) {
     const project = await $fetch<Project>("/api/projects", {
       method: "POST",
-      body: { name, repos },
+      body: { name, repos, devServer },
     });
     projects.value.push(project);
     setActiveProject(project.id);
     return project;
   }
 
-  async function updateProject(id: string, data: { name?: string; repos?: Array<{ name: string; path: string }> }) {
+  async function updateProject(id: string, data: { name?: string; repos?: Array<{ name: string; path: string }>; devServer?: { command: string; basePort: number; repo?: string } | null }) {
     const updated = await $fetch<Project>(`/api/projects/${id}`, {
       method: "PUT",
       body: data,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, Plus, Trash2, FolderGit2 } from "lucide-vue-next";
+import { X, Plus, Trash2, FolderGit2, ChevronDown, Terminal } from "lucide-vue-next";
 import type { Project } from "~~/shared/types";
 
 const props = defineProps<{
@@ -8,7 +8,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  save: [project: { name: string; repos: Array<{ name: string; path: string }> }];
+  save: [project: { name: string; repos: Array<{ name: string; path: string }>; devServer?: { command: string; basePort: number; repo?: string } | null }];
   delete: [id: string];
 }>();
 
@@ -16,6 +16,11 @@ const name = ref(props.project?.name || "");
 const repos = ref<Array<{ name: string; path: string }>>(
   props.project?.repos?.map((r) => ({ ...r })) || [{ name: "", path: "" }],
 );
+const devServerEnabled = ref(!!props.project?.devServer);
+const devServerCommand = ref(props.project?.devServer?.command || "");
+const devServerBasePort = ref(props.project?.devServer?.basePort || 3100);
+const devServerRepo = ref(props.project?.devServer?.repo || "");
+const devServerOpen = ref(!!props.project?.devServer);
 const error = ref("");
 const saving = ref(false);
 
@@ -44,9 +49,18 @@ async function handleSave() {
 
   saving.value = true;
   try {
+    const devServer = devServerEnabled.value && devServerCommand.value.trim()
+      ? {
+          command: devServerCommand.value.trim(),
+          basePort: devServerBasePort.value,
+          ...(devServerRepo.value.trim() ? { repo: devServerRepo.value.trim() } : {}),
+        }
+      : null;
+
     emit("save", {
       name: name.value.trim(),
       repos: validRepos.map((r) => ({ name: r.name.trim(), path: r.path.trim() })),
+      devServer,
     });
   } finally {
     saving.value = false;
@@ -130,6 +144,66 @@ function handleDelete() {
                 <Trash2 class="h-3 w-3" />
               </button>
             </div>
+          </div>
+        </div>
+
+        <!-- Dev Server -->
+        <div>
+          <button
+            class="flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+            type="button"
+            @click="devServerOpen = !devServerOpen; if (devServerOpen) devServerEnabled = true"
+          >
+            <ChevronDown
+              class="h-3 w-3 transition-transform"
+              :class="devServerOpen ? '' : '-rotate-90'"
+            />
+            <Terminal class="h-3 w-3" />
+            Dev Server
+            <span v-if="devServerEnabled && devServerCommand" class="text-[10px] text-green-400">configured</span>
+          </button>
+          <div v-if="devServerOpen" class="mt-2 space-y-2 rounded-md border border-border p-3">
+            <label class="flex items-center gap-2 text-xs text-foreground">
+              <input
+                v-model="devServerEnabled"
+                type="checkbox"
+                class="h-3 w-3 accent-primary"
+              />
+              Enable dev server
+            </label>
+            <template v-if="devServerEnabled">
+              <div>
+                <label class="mb-1 block text-[10px] text-muted-foreground">Command</label>
+                <input
+                  v-model="devServerCommand"
+                  type="text"
+                  placeholder="npm run dev"
+                  class="w-full rounded-md border border-input bg-secondary px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="mb-1 block text-[10px] text-muted-foreground">Base Port</label>
+                  <input
+                    v-model.number="devServerBasePort"
+                    type="number"
+                    min="1024"
+                    max="65535"
+                    class="w-full rounded-md border border-input bg-secondary px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div v-if="repos.length > 1" class="flex-1">
+                  <label class="mb-1 block text-[10px] text-muted-foreground">Repo (optional)</label>
+                  <select
+                    v-model="devServerRepo"
+                    class="w-full rounded-md border border-input bg-secondary px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="">First repo</option>
+                    <option v-for="r in repos.filter((r) => r.name)" :key="r.name" :value="r.name">{{ r.name }}</option>
+                  </select>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
 

@@ -10,6 +10,8 @@ import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
 import HighlightMatch from "~/components/HighlightMatch.vue";
 import ProjectSwitcher from "~/components/ProjectSwitcher.vue";
 import ProjectConfigDialog from "~/components/ProjectConfigDialog.vue";
+import DevServerButton from "~/components/DevServerButton.vue";
+import DevServerLogs from "~/components/DevServerLogs.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -68,6 +70,7 @@ const inputEl = ref<HTMLTextAreaElement>();
 const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
 const sidebarOpen = ref(true);
 const changesOpen = ref(false);
+const logsOpen = ref(false);
 const projectDialogOpen = ref(false);
 const editingProject = ref<Project | null>(null);
 const projectDialogError = ref("");
@@ -181,13 +184,13 @@ function handleEditProject(project: Project) {
   projectDialogError.value = "";
 }
 
-async function handleSaveProject(data: { name: string; repos: Array<{ name: string; path: string }> }) {
+async function handleSaveProject(data: { name: string; repos: Array<{ name: string; path: string }>; devServer?: { command: string; basePort: number; repo?: string } | null }) {
   projectDialogError.value = "";
   try {
     if (editingProject.value) {
       await projectStore.updateProject(editingProject.value.id, data);
     } else {
-      await projectStore.createProject(data.name, data.repos);
+      await projectStore.createProject(data.name, data.repos, data.devServer ?? undefined);
     }
     projectDialogOpen.value = false;
   } catch (err: any) {
@@ -215,6 +218,8 @@ const attentionProjectIds = computed(() => {
   }
   return ids;
 });
+
+const hasDevServer = computed(() => !!activeProject.value?.devServer);
 
 const showProjectDetails = computed(() => {
   if (!activeProject.value) return false;
@@ -406,6 +411,11 @@ onMounted(() => {
         >
           <component :is="themeIcon" class="h-4 w-4" />
         </button>
+        <DevServerButton
+          v-if="hasDevServer && activeSessionId"
+          :session-id="activeSessionId"
+          @toggle-logs="logsOpen = !logsOpen"
+        />
         <button
           class="rounded-md p-1.5 transition-colors"
           :class="changesOpen ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
@@ -569,6 +579,17 @@ onMounted(() => {
         ref="changedFilesRef"
         :session-id="activeSessionId"
         :worktrees="activeSession?.worktrees || {}"
+      />
+    </aside>
+
+    <!-- Dev server logs panel -->
+    <aside
+      v-show="logsOpen && hasDevServer"
+      class="flex w-80 flex-col border-l border-border bg-card"
+    >
+      <DevServerLogs
+        v-if="activeSessionId"
+        :session-id="activeSessionId"
       />
     </aside>
 

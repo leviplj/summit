@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: "Project not found" });
   }
 
-  const body = await readBody<{ name?: string; repos?: Array<{ name: string; path: string }> }>(event);
+  const body = await readBody<{ name?: string; repos?: Array<{ name: string; path: string }>; devServer?: { command: string; basePort: number; repo?: string } | null }>(event);
 
   if (body.name !== undefined) {
     if (!body.name.trim()) {
@@ -23,6 +23,14 @@ export default defineEventHandler(async (event) => {
       await validateRepoPath(repo.path);
     }
     project.repos = body.repos;
+  }
+
+  if (body.devServer !== undefined) {
+    if (body.devServer === null) {
+      delete project.devServer;
+    } else {
+      project.devServer = body.devServer;
+    }
   }
 
   await saveProject(project);
