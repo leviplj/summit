@@ -356,7 +356,7 @@ onMounted(() => {
           </span>
           <span
             class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 hover:text-red-400 group-hover:opacity-100"
-            @click.stop="deleteSession(s.id)"
+            @click.stop="deleteSession(s.id, projectStore.activeProjectId.value)"
           >
             <Trash2 class="h-3 w-3" />
           </span>
