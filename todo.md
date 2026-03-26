@@ -2,6 +2,6 @@
 - [x] model-selector (17 tasks) — Per-session model selection
 - [x] keyboard-shortcuts (13 tasks) — Global keyboard shortcuts
 - [x] cost-tracking (9 tasks) — Per-message and session cost display
-- [ ] session-search (23 tasks) — Search/filter sessions
+- [x] session-search (23 tasks) — Search/filter sessions
 - [ ] commit-and-pr-management (35 tasks) — Git commit and PR creation from UI
 - [ ] multi-project-support (32 tasks) — Multi-repo project support

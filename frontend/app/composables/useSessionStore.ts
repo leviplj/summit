@@ -29,10 +29,21 @@ export function useSessionStore() {
   const sessions = ref<ClientSession[]>([]);
   const activeSessionId = ref("");
   const loaded = ref(false);
+  const searchQuery = ref("");
+  const fullTextEnabled = ref(false);
+  const fullTextResults = ref<{ sessionId: string; snippet: string }[]>([]);
 
   const activeSession = computed(
     () => sessions.value.find((s) => s.id === activeSessionId.value),
   );
+  const filteredSessions = computed(() => {
+    const q = searchQuery.value.toLowerCase().trim();
+    if (!q) return sessions.value;
+    const fullTextIds = new Set(fullTextResults.value.map((r) => r.sessionId));
+    return sessions.value.filter(
+      (s) => s.title.toLowerCase().includes(q) || (fullTextEnabled.value && fullTextIds.has(s.id)),
+    );
+  });
   const messages = computed(() => activeSession.value?.messages ?? []);
   const events = computed(() => activeSession.value?.events ?? []);
   const loading = computed(() => activeSession.value?.loading ?? false);
@@ -139,6 +150,28 @@ export function useSessionStore() {
     } catch {}
   }
 
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+  async function searchFullText(query: string) {
+    if (!query.trim()) { fullTextResults.value = []; return; }
+    try {
+      const results = await $fetch<{ sessionId: string; snippet: string }[]>(
+        `/api/sessions/search`, { params: { q: query } },
+      );
+      fullTextResults.value = results;
+    } catch { fullTextResults.value = []; }
+  }
+
+  watch(searchQuery, (q) => {
+    if (searchTimeout) clearTimeout(searchTimeout);
+    if (!fullTextEnabled.value || !q.trim()) { fullTextResults.value = []; return; }
+    searchTimeout = setTimeout(() => searchFullText(q), 300);
+  });
+
+  watch(fullTextEnabled, (enabled) => {
+    if (enabled && searchQuery.value.trim()) searchFullText(searchQuery.value);
+    else fullTextResults.value = [];
+  });
+
   async function reloadSession(id: string) {
     try {
       const stored = await $fetch<any>(`/api/sessions/${id}`);
@@ -153,8 +186,12 @@ export function useSessionStore() {
 
   return {
     sessions,
+    filteredSessions,
     activeSessionId,
     activeSession,
+    searchQuery,
+    fullTextEnabled,
+    fullTextResults,
     messages,
     events,
     loading,

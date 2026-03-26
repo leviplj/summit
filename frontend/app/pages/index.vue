@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor } from "lucide-vue-next";
+import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor, Search, X, MessageSquareText } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
@@ -7,6 +7,7 @@ import AskUserQuestions from "~/components/AskUserQuestions.vue";
 import ChangedFiles from "~/components/ChangedFiles.vue";
 import ModelSelector from "~/components/ModelSelector.vue";
 import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
+import HighlightMatch from "~/components/HighlightMatch.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -35,6 +36,10 @@ const {
   cancel,
   updateModel,
   sessionCost,
+  searchQuery,
+  filteredSessions,
+  fullTextEnabled,
+  fullTextResults,
   newSession,
   selectSession,
   selectPrevSession,
@@ -126,9 +131,45 @@ watch(loading, (isLoading, wasLoading) => {
         </button>
       </div>
 
+      <!-- Search input -->
+      <div class="px-2 pb-2">
+        <div class="relative flex items-center gap-1">
+          <div class="relative flex-1">
+            <Search class="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search chats…"
+              class="w-full rounded-md border border-input bg-secondary py-1.5 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              v-if="searchQuery"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+              @click="searchQuery = ''"
+            >
+              <X class="h-3 w-3" />
+            </button>
+          </div>
+          <button
+            class="shrink-0 rounded-md p-1.5 transition-colors"
+            :class="fullTextEnabled ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
+            title="Search message content"
+            @click="fullTextEnabled = !fullTextEnabled"
+          >
+            <MessageSquareText class="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
       <nav class="flex-1 overflow-y-auto px-2 pb-2">
+        <div
+          v-if="filteredSessions.length === 0 && searchQuery"
+          class="px-3 py-4 text-center text-xs text-muted-foreground"
+        >
+          No matching sessions
+        </div>
         <button
-          v-for="s in sessions"
+          v-for="s in filteredSessions"
           :key="s.id"
           class="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
           :class="
@@ -151,12 +192,18 @@ watch(loading, (isLoading, wasLoading) => {
             />
           </span>
           <span class="flex-1 truncate">
-            <span class="block truncate">{{ s.title }}</span>
+            <span class="block truncate">
+              <HighlightMatch :text="s.title" :query="searchQuery" />
+            </span>
             <span
               v-if="s.status !== 'idle'"
               class="block truncate text-[10px] leading-tight"
               :class="s.status === 'error' ? 'text-red-400' : 'text-muted-foreground'"
             >{{ statusConfig[s.status].label }}</span>
+            <span
+              v-if="fullTextEnabled && searchQuery && fullTextResults.find((r) => r.sessionId === s.id) && !s.title.toLowerCase().includes(searchQuery.toLowerCase())"
+              class="block truncate text-[10px] leading-tight text-muted-foreground italic"
+            >{{ fullTextResults.find((r) => r.sessionId === s.id)?.snippet }}</span>
           </span>
           <span
             v-if="sessions.length > 1"
