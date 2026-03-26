@@ -220,6 +220,9 @@ export function useChat() {
     const session = store.activeSession.value;
     if (!session || session.loading) return;
 
+    // Wait for server-side session creation (worktree setup) to complete
+    await store.waitForCreation(session.id);
+
     session.messages.push({ id: uid(), role: "user", content: text });
     session.loading = true;
     session.status = "waiting";

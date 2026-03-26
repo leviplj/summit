@@ -52,3 +52,15 @@ export async function mergeBranch(worktreePath: string, branch: string): Promise
   const repoRoot = await getMainRepoRoot(worktreePath);
   await exec("git", ["merge", branch, "--no-edit"], { cwd: repoRoot });
 }
+
+export function resolveWorktreePath(
+  session: { worktreePath: string | null; worktrees: Record<string, string> },
+  repoName?: string,
+): string {
+  if (repoName && session.worktrees?.[repoName]) {
+    return session.worktrees[repoName];
+  }
+  // Single-repo or legacy: fall back to worktreePath
+  if (session.worktreePath) return session.worktreePath;
+  throw new Error("No worktree for this session");
+}

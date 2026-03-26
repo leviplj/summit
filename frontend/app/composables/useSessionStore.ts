@@ -4,7 +4,9 @@ export interface ClientSession {
   id: string;
   title: string;
   model: string | null;
+  projectId: string | null;
   branch: string | null;
+  worktrees: Record<string, string>;
   messages: ChatMessage[];
   events: ToolEvent[];
   loading: boolean;
@@ -24,6 +26,9 @@ let _id = 0;
 const uid = () => String(++_id);
 
 export { uid };
+
+// Tracks pending session creation so callers can await it
+const pendingCreation = new Map<string, Promise<void>>();
 
 export function useSessionStore() {
   const sessions = ref<ClientSession[]>([]);
@@ -58,7 +63,9 @@ export function useSessionStore() {
           id: s.id,
           title: s.title,
           model: s.model || null,
+          projectId: s.projectId || null,
           branch: s.branch || null,
+          worktrees: s.worktrees || {},
           messages: s.messages || [],
           events: [],
           loading: false,
@@ -80,13 +87,15 @@ export function useSessionStore() {
     return [];
   }
 
-  async function newSession() {
+  async function newSession(projectId?: string | null) {
     const id = crypto.randomUUID();
     const session: ClientSession = {
       id,
       title: "New chat",
       model: null,
+      projectId: projectId || null,
       branch: null,
+      worktrees: {},
       messages: [],
       events: [],
       loading: false,
@@ -97,15 +106,26 @@ export function useSessionStore() {
     sessions.value.unshift(session);
     activeSessionId.value = id;
 
-    try {
-      const created = await $fetch<any>("/api/sessions", {
-        method: "POST",
-        body: { id, title: "New chat" },
-      });
-      if (created?.branch) {
-        session.branch = created.branch;
-      }
-    } catch {}
+    const creation = (async () => {
+      try {
+        const created = await $fetch<any>("/api/sessions", {
+          method: "POST",
+          body: { id, title: "New chat", projectId: projectId || undefined },
+        });
+        if (created?.branch) {
+          session.branch = created.branch;
+        }
+        if (created?.worktrees) {
+          session.worktrees = created.worktrees;
+        }
+        if (created?.projectId) {
+          session.projectId = created.projectId;
+        }
+      } catch {}
+    })();
+    pendingCreation.set(id, creation);
+    await creation;
+    pendingCreation.delete(id);
   }
 
   function selectSession(id: string) {
@@ -178,9 +198,15 @@ export function useSessionStore() {
       if (s && stored) {
         s.title = stored.title;
         s.branch = stored.branch || null;
+        s.worktrees = stored.worktrees || {};
         s.messages = stored.messages;
       }
     } catch {}
+  }
+
+  async function waitForCreation(sessionId: string) {
+    const p = pendingCreation.get(sessionId);
+    if (p) await p;
   }
 
   return {
@@ -205,5 +231,6 @@ export function useSessionStore() {
     deleteSession,
     reloadSession,
     updateModel,
+    waitForCreation,
   };
 }

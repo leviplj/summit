@@ -18,8 +18,10 @@ export interface StoredSession {
   title: string;
   model: string | null;
   agentSessionId: string | null;
+  projectId: string | null;
   worktreePath: string | null;
   branch: string | null;
+  worktrees: Record<string, string>;
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
@@ -29,7 +31,9 @@ export interface SessionListItem {
   id: string;
   title: string;
   model: string | null;
+  projectId: string | null;
   branch: string | null;
+  worktrees: Record<string, string>;
   messages: ChatMessage[];
   hasActiveQuery: boolean;
 }
@@ -67,6 +71,14 @@ export interface ElicitationPayload {
   serverName: string;
   message: string;
   schema?: Record<string, unknown>;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  repos: Array<{ name: string; path: string }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FileChange {

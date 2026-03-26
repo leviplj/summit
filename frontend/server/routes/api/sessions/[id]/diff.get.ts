@@ -7,6 +7,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
   const query = getQuery(event);
   const filePath = query.path as string;
+  const repoName = query.repo as string | undefined;
 
   if (!filePath) {
     throw createError({ statusCode: 400, statusMessage: "Missing path parameter" });
@@ -16,31 +17,38 @@ export default defineEventHandler(async (event) => {
   if (!session) {
     throw createError({ statusCode: 404, statusMessage: "Session not found" });
   }
-  if (!session.worktreePath) {
+
+  // Resolve the correct worktree path
+  let cwd: string | null = null;
+  if (repoName && session.worktrees?.[repoName]) {
+    cwd = session.worktrees[repoName];
+  } else {
+    cwd = session.worktreePath;
+  }
+
+  if (!cwd) {
     return { diff: "" };
   }
 
   try {
     let mergeBase: string;
     try {
-      mergeBase = await getMergeBase(session.worktreePath);
+      mergeBase = await getMergeBase(cwd);
     } catch {
       mergeBase = "HEAD";
     }
 
-    // Diff from merge-base to working tree — shows the full session change for this file
     const { stdout } = await exec(
       "git",
       ["diff", mergeBase, "--", filePath],
-      { cwd: session.worktreePath, maxBuffer: 1024 * 1024 },
+      { cwd, maxBuffer: 1024 * 1024 },
     ).catch(() => ({ stdout: "" }));
 
-    // If no diff (file might be untracked), show full content as additions
     if (!stdout) {
       const { stdout: content } = await exec(
         "git",
         ["diff", "--no-index", "--", "/dev/null", filePath],
-        { cwd: session.worktreePath, maxBuffer: 1024 * 1024 },
+        { cwd, maxBuffer: 1024 * 1024 },
       ).catch((err: any) => ({ stdout: err.stdout || "" }));
       return { diff: content };
     }

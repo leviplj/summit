@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor, Search, X, MessageSquareText } from "lucide-vue-next";
-import type { SessionStatus } from "~~/shared/types";
+import type { SessionStatus, Project } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
 import AskUserQuestions from "~/components/AskUserQuestions.vue";
@@ -8,6 +8,8 @@ import ChangedFiles from "~/components/ChangedFiles.vue";
 import ModelSelector from "~/components/ModelSelector.vue";
 import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
 import HighlightMatch from "~/components/HighlightMatch.vue";
+import ProjectSwitcher from "~/components/ProjectSwitcher.vue";
+import ProjectConfigDialog from "~/components/ProjectConfigDialog.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -47,6 +49,9 @@ const {
   deleteSession,
 } = useChat();
 
+const projectStore = useProjectStore();
+const { projects, activeProject } = projectStore;
+
 const { theme, cycleTheme } = useTheme();
 
 const themeIcon = computed(() => {
@@ -62,16 +67,48 @@ const inputEl = ref<HTMLTextAreaElement>();
 const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
 const sidebarOpen = ref(true);
 const changesOpen = ref(false);
+const projectDialogOpen = ref(false);
+const editingProject = ref<Project | null>(null);
+const projectDialogError = ref("");
+
+// Filter sessions by active project
+const projectFilteredSessions = computed(() => {
+  if (!projectStore.activeProjectId.value) return filteredSessions.value;
+  return filteredSessions.value.filter(
+    (s) => s.projectId === projectStore.activeProjectId.value,
+  );
+});
+
+// Branch badges for multi-repo
+const branchBadges = computed(() => {
+  const session = activeSession.value;
+  if (!session) return [];
+  const wts = session.worktrees;
+  if (wts && Object.keys(wts).length > 1) {
+    return Object.entries(wts).map(([name]) => ({
+      name,
+      branch: `summit/${session.id}/${name}`,
+    }));
+  }
+  if (session.branch) {
+    return [{ name: "", branch: session.branch }];
+  }
+  return [];
+});
 
 const { helpOpen, shortcuts } = useKeyboardShortcuts({
   sidebarOpen,
   changesOpen,
   refreshChanges: () => changedFilesRef.value?.refresh(),
-  newSession,
+  newSession: () => handleNewSession(),
   selectPrevSession,
   selectNextSession,
   focusInput: () => inputEl.value?.focus(),
 });
+
+function handleNewSession() {
+  newSession(projectStore.activeProjectId.value);
+}
 
 function handleSend() {
   if (!input.value.trim() || loading.value) return;
@@ -111,6 +148,56 @@ watch(loading, (isLoading, wasLoading) => {
     changedFilesRef.value?.refresh();
   }
 });
+
+// Project management
+function handleSelectProject(id: string | null) {
+  if (id) {
+    projectStore.setActiveProject(id);
+  } else {
+    projectStore.activeProjectId.value = null;
+    localStorage.removeItem("summit:activeProjectId");
+  }
+}
+
+function handleCreateProject() {
+  editingProject.value = null;
+  projectDialogOpen.value = true;
+  projectDialogError.value = "";
+}
+
+function handleEditProject(project: Project) {
+  editingProject.value = project;
+  projectDialogOpen.value = true;
+  projectDialogError.value = "";
+}
+
+async function handleSaveProject(data: { name: string; repos: Array<{ name: string; path: string }> }) {
+  projectDialogError.value = "";
+  try {
+    if (editingProject.value) {
+      await projectStore.updateProject(editingProject.value.id, data);
+    } else {
+      await projectStore.createProject(data.name, data.repos);
+    }
+    projectDialogOpen.value = false;
+  } catch (err: any) {
+    projectDialogError.value = err.data?.message || err.message || "Failed to save project";
+  }
+}
+
+async function handleDeleteProject(id: string) {
+  try {
+    await projectStore.deleteProject(id);
+    projectDialogOpen.value = false;
+  } catch (err: any) {
+    projectDialogError.value = err.data?.message || err.message || "Failed to delete project";
+  }
+}
+
+// Load projects on mount
+onMounted(() => {
+  projectStore.loadProjects();
+});
 </script>
 
 <template>
@@ -125,9 +212,28 @@ watch(loading, (isLoading, wasLoading) => {
         <button
           class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title="New chat"
-          @click="newSession"
+          @click="handleNewSession"
         >
           <Plus class="h-4 w-4" />
+        </button>
+      </div>
+
+      <!-- Project switcher -->
+      <ProjectSwitcher
+        v-if="projects.length > 0"
+        :projects="projects"
+        :active-project="activeProject"
+        @select="handleSelectProject"
+        @create="handleCreateProject"
+        @edit="handleEditProject"
+      />
+      <div v-else class="px-2 pb-2">
+        <button
+          class="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          @click="handleCreateProject"
+        >
+          <Plus class="h-3 w-3" />
+          Create project
         </button>
       </div>
 
@@ -163,13 +269,19 @@ watch(loading, (isLoading, wasLoading) => {
 
       <nav class="flex-1 overflow-y-auto px-2 pb-2">
         <div
-          v-if="filteredSessions.length === 0 && searchQuery"
+          v-if="projectFilteredSessions.length === 0 && searchQuery"
           class="px-3 py-4 text-center text-xs text-muted-foreground"
         >
           No matching sessions
         </div>
+        <div
+          v-else-if="projectFilteredSessions.length === 0 && !searchQuery"
+          class="px-3 py-4 text-center text-xs text-muted-foreground"
+        >
+          No sessions yet
+        </div>
         <button
-          v-for="s in filteredSessions"
+          v-for="s in projectFilteredSessions"
           :key="s.id"
           class="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
           :class="
@@ -234,13 +346,15 @@ watch(loading, (isLoading, wasLoading) => {
         </button>
         <img src="/logo.png" alt="Summit" class="h-6 w-6 rounded" />
         <h1 class="text-lg font-semibold text-foreground">Summit</h1>
-        <span
-          v-if="activeSession?.branch"
-          class="flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-muted-foreground"
-        >
-          <GitBranch class="h-3 w-3" />
-          {{ activeSession.branch }}
-        </span>
+        <template v-for="badge in branchBadges" :key="badge.branch">
+          <span
+            class="flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-muted-foreground"
+          >
+            <GitBranch class="h-3 w-3" />
+            <span v-if="badge.name" class="font-medium">{{ badge.name }}:</span>
+            {{ badge.branch }}
+          </span>
+        </template>
         <ModelSelector
           v-if="activeSession"
           :model-value="activeSession.model"
@@ -366,6 +480,7 @@ watch(loading, (isLoading, wasLoading) => {
         v-if="activeSessionId"
         ref="changedFilesRef"
         :session-id="activeSessionId"
+        :worktrees="activeSession?.worktrees || {}"
       />
     </aside>
 
@@ -374,6 +489,15 @@ watch(loading, (isLoading, wasLoading) => {
       v-if="helpOpen"
       :shortcuts="shortcuts"
       @close="helpOpen = false"
+    />
+
+    <!-- Project config dialog -->
+    <ProjectConfigDialog
+      v-if="projectDialogOpen"
+      :project="editingProject"
+      @close="projectDialogOpen = false"
+      @save="handleSaveProject"
+      @delete="handleDeleteProject"
     />
   </div>
 </template>

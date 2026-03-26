@@ -120,6 +120,26 @@ function finalize(sessionId: string) {
   pendingAskUser.delete(sessionId);
 }
 
+function getSessionCwd(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>): string {
+  const wts = session.worktrees;
+  if (wts && Object.keys(wts).length > 0) {
+    const entries = Object.values(wts);
+    // Single repo: use the repo worktree directly
+    if (entries.length === 1) return entries[0];
+    // Multi repo: use parent folder
+    return session.worktreePath || process.cwd();
+  }
+  return session.worktreePath || process.cwd();
+}
+
+function getSessionAdditionalDirs(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>): string[] {
+  const wts = session.worktrees;
+  if (wts && Object.keys(wts).length > 1) {
+    return Object.values(wts);
+  }
+  return [];
+}
+
 async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>, text: string, sessionId: string) {
   const state = createStreamState();
   const errorMessages: Array<{ id: string; role: "error"; content: string }> = [];
@@ -127,6 +147,8 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
   abortControllers.set(sessionId, abortController);
 
   try {
+    const resolvedCwd = getSessionCwd(session);
+    console.log(`[summit] Query cwd for session ${sessionId}: ${resolvedCwd} (worktrees: ${JSON.stringify(session.worktrees)}, worktreePath: ${session.worktreePath})`);
     const q = query({
       prompt: text,
       options: {
@@ -134,12 +156,15 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
-        cwd: session.worktreePath || process.cwd(),
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
           append: `IMPORTANT: Your working directory is "${session.worktreePath || process.cwd()}". Always create and edit files within this directory. Never write files to the user's home directory or any path outside the working directory unless the user explicitly asks you to.`,
         },
+        cwd: resolvedCwd,
+        ...(getSessionAdditionalDirs(session).length > 0
+          ? { additionalDirectories: getSessionAdditionalDirs(session) }
+          : {}),
         toolConfig: { askUserQuestion: { previewFormat: "html" } },
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
         ...(session.model ? { model: session.model } : {}),

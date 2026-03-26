@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { FileCode, FilePlus, FileMinus, FileEdit, RefreshCw, ArrowLeft, GitMerge, Circle, Sparkles, Loader2 } from "lucide-vue-next";
+import { FileCode, FilePlus, FileMinus, FileEdit, RefreshCw, ArrowLeft, GitMerge, Circle, Sparkles, Loader2, ChevronDown } from "lucide-vue-next";
 import type { FileChange } from "~~/shared/types";
 
 const props = defineProps<{
   sessionId: string;
+  worktrees: Record<string, string>;
 }>();
 
+// Multi-repo state
+const isMultiRepo = computed(() => Object.keys(props.worktrees).length > 1);
+const repoChanges = ref<Record<string, FileChange[]>>({});
+const collapsedRepos = ref<Set<string>>(new Set());
+
+// Single-repo / flat state
 const files = ref<FileChange[]>([]);
 const sourceBranch = ref("main");
 const loading = ref(false);
 const selectedFile = ref<FileChange | null>(null);
+const selectedFileRepo = ref<string | null>(null);
 const diffText = ref("");
 const diffLoading = ref(false);
 const commitMessage = ref("");
@@ -21,10 +29,25 @@ const merging = ref(false);
 const mergeError = ref("");
 const mergeSuccess = ref("");
 
-const uncommittedFiles = computed(() => files.value.filter((f) => f.uncommitted));
+// Flatten all files across repos for summary
+const allFiles = computed(() => {
+  if (isMultiRepo.value) {
+    const all: Array<FileChange & { repo: string }> = [];
+    for (const [repo, files] of Object.entries(repoChanges.value)) {
+      for (const f of files) {
+        all.push({ ...f, repo });
+      }
+    }
+    return all;
+  }
+  return files.value.map((f) => ({ ...f, repo: "" }));
+});
+
+const uncommittedFiles = computed(() => allFiles.value.filter((f) => f.uncommitted));
 const stagedFiles = computed(() => uncommittedFiles.value.filter((f) => f.staged));
 const unstagedFiles = computed(() => uncommittedFiles.value.filter((f) => !f.staged));
 const hasUncommitted = computed(() => uncommittedFiles.value.length > 0);
+const totalFiles = computed(() => allFiles.value.length);
 
 const statusIcon: Record<string, any> = {
   added: FilePlus,
@@ -43,24 +66,32 @@ const statusColor: Record<string, string> = {
 async function fetchChanges() {
   loading.value = true;
   try {
-    const data = await $fetch<{ files: FileChange[]; sourceBranch: string }>(`/api/sessions/${props.sessionId}/changes`);
-    files.value = data.files;
+    const data = await $fetch<any>(`/api/sessions/${props.sessionId}/changes`);
+    if (data.repoChanges) {
+      repoChanges.value = data.repoChanges;
+      files.value = [];
+    } else {
+      files.value = data.files || [];
+      repoChanges.value = {};
+    }
     if (data.sourceBranch) sourceBranch.value = data.sourceBranch;
   } catch {
     files.value = [];
+    repoChanges.value = {};
   } finally {
     loading.value = false;
   }
 }
 
-async function viewDiff(file: FileChange) {
+async function viewDiff(file: FileChange, repo?: string) {
   selectedFile.value = file;
+  selectedFileRepo.value = repo || null;
   diffLoading.value = true;
   diffText.value = "";
   try {
-    const data = await $fetch<{ diff: string }>(`/api/sessions/${props.sessionId}/diff`, {
-      params: { path: file.path },
-    });
+    const params: Record<string, string> = { path: file.path };
+    if (repo) params.repo = repo;
+    const data = await $fetch<{ diff: string }>(`/api/sessions/${props.sessionId}/diff`, { params });
     diffText.value = data.diff;
   } catch {
     diffText.value = "Failed to load diff";
@@ -71,40 +102,62 @@ async function viewDiff(file: FileChange) {
 
 function goBack() {
   selectedFile.value = null;
+  selectedFileRepo.value = null;
   diffText.value = "";
 }
 
-async function toggleStage(file: FileChange) {
+function toggleRepoCollapse(repo: string) {
+  if (collapsedRepos.value.has(repo)) {
+    collapsedRepos.value.delete(repo);
+  } else {
+    collapsedRepos.value.add(repo);
+  }
+}
+
+async function toggleStage(file: FileChange & { repo?: string }) {
   const endpoint = file.staged ? "unstage" : "stage";
   try {
     await $fetch(`/api/sessions/${props.sessionId}/git/${endpoint}`, {
       method: "POST",
-      body: { paths: [file.path] },
+      body: { paths: [file.path], repo: file.repo || undefined },
     });
     await fetchChanges();
   } catch {}
 }
 
 async function stageAll() {
-  const paths = unstagedFiles.value.map((f) => f.path);
-  if (!paths.length) return;
+  // Group by repo
+  const byRepo = new Map<string, string[]>();
+  for (const f of unstagedFiles.value) {
+    const repo = f.repo || "";
+    if (!byRepo.has(repo)) byRepo.set(repo, []);
+    byRepo.get(repo)!.push(f.path);
+  }
   try {
-    await $fetch(`/api/sessions/${props.sessionId}/git/stage`, {
-      method: "POST",
-      body: { paths },
-    });
+    for (const [repo, paths] of byRepo) {
+      await $fetch(`/api/sessions/${props.sessionId}/git/stage`, {
+        method: "POST",
+        body: { paths, repo: repo || undefined },
+      });
+    }
     await fetchChanges();
   } catch {}
 }
 
 async function unstageAll() {
-  const paths = stagedFiles.value.map((f) => f.path);
-  if (!paths.length) return;
+  const byRepo = new Map<string, string[]>();
+  for (const f of stagedFiles.value) {
+    const repo = f.repo || "";
+    if (!byRepo.has(repo)) byRepo.set(repo, []);
+    byRepo.get(repo)!.push(f.path);
+  }
   try {
-    await $fetch(`/api/sessions/${props.sessionId}/git/unstage`, {
-      method: "POST",
-      body: { paths },
-    });
+    for (const [repo, paths] of byRepo) {
+      await $fetch(`/api/sessions/${props.sessionId}/git/unstage`, {
+        method: "POST",
+        body: { paths, repo: repo || undefined },
+      });
+    }
     await fetchChanges();
   } catch {}
 }
@@ -115,11 +168,26 @@ async function handleCommit() {
   commitError.value = "";
   commitSuccess.value = "";
   try {
-    const result = await $fetch<{ ok: boolean; hash: string }>(`/api/sessions/${props.sessionId}/git/commit`, {
-      method: "POST",
-      body: { message: commitMessage.value.trim() },
-    });
-    commitSuccess.value = `Committed ${result.hash}`;
+    // For multi-repo, commit per repo
+    if (isMultiRepo.value) {
+      const byRepo = new Map<string, boolean>();
+      for (const f of stagedFiles.value) {
+        byRepo.set(f.repo, true);
+      }
+      for (const repo of byRepo.keys()) {
+        await $fetch<{ ok: boolean; hash: string }>(`/api/sessions/${props.sessionId}/git/commit`, {
+          method: "POST",
+          body: { message: commitMessage.value.trim(), repo },
+        });
+      }
+      commitSuccess.value = `Committed to ${byRepo.size} repo(s)`;
+    } else {
+      const result = await $fetch<{ ok: boolean; hash: string }>(`/api/sessions/${props.sessionId}/git/commit`, {
+        method: "POST",
+        body: { message: commitMessage.value.trim() },
+      });
+      commitSuccess.value = `Committed ${result.hash}`;
+    }
     commitMessage.value = "";
     await fetchChanges();
     setTimeout(() => { commitSuccess.value = ""; }, 3000);
@@ -134,8 +202,11 @@ async function generateMessage() {
   if (!stagedFiles.value.length) return;
   generating.value = true;
   try {
+    // Use first repo with staged files
+    const repo = isMultiRepo.value ? stagedFiles.value[0].repo : undefined;
     const result = await $fetch<{ message: string }>(`/api/sessions/${props.sessionId}/git/generate-message`, {
       method: "POST",
+      body: { repo },
     });
     commitMessage.value = result.message;
   } catch {}
@@ -147,7 +218,10 @@ async function handleMerge() {
   mergeError.value = "";
   mergeSuccess.value = "";
   try {
-    await $fetch(`/api/sessions/${props.sessionId}/git/merge`, { method: "POST" });
+    await $fetch(`/api/sessions/${props.sessionId}/git/merge`, {
+      method: "POST",
+      body: {},
+    });
     mergeSuccess.value = "Merged to source branch";
     await fetchChanges();
     setTimeout(() => { mergeSuccess.value = ""; }, 5000);
@@ -191,12 +265,12 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
         <ArrowLeft class="h-3.5 w-3.5" />
       </button>
       <span v-if="selectedFile" class="flex-1 truncate text-xs font-semibold text-foreground" :title="selectedFile.path">
-        {{ selectedFile.path }}
+        <span v-if="selectedFileRepo" class="text-muted-foreground">{{ selectedFileRepo }}/</span>{{ selectedFile.path }}
       </span>
       <template v-else>
         <span class="flex-1 text-xs font-semibold text-foreground">
           Session Changes
-          <span v-if="files.length" class="ml-1 text-muted-foreground">({{ files.length }})</span>
+          <span v-if="totalFiles" class="ml-1 text-muted-foreground">({{ totalFiles }})</span>
         </span>
         <button
           class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -210,40 +284,85 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
 
     <!-- File list -->
     <div v-if="!selectedFile" class="flex-1 overflow-y-auto">
-      <div v-if="loading && !files.length" class="px-3 py-4 text-center text-xs text-muted-foreground">
+      <div v-if="loading && totalFiles === 0" class="px-3 py-4 text-center text-xs text-muted-foreground">
         Loading…
       </div>
-      <div v-else-if="files.length === 0" class="px-3 py-4 text-center text-xs text-muted-foreground">
+      <div v-else-if="totalFiles === 0" class="px-3 py-4 text-center text-xs text-muted-foreground">
         No changes yet
       </div>
       <template v-else>
-        <!-- All session files -->
-        <div class="py-1">
-          <button
-            v-for="file in files"
-            :key="file.path"
-            class="flex w-full items-center gap-2 px-3 py-1 text-left text-xs transition-colors hover:bg-accent/50"
-            @click="viewDiff(file)"
-          >
-            <component
-              :is="statusIcon[file.status]"
-              class="h-3.5 w-3.5 shrink-0"
-              :class="statusColor[file.status]"
-            />
-            <span class="flex-1 truncate text-foreground" :title="file.path">
-              {{ file.path }}
-            </span>
-            <Circle
-              v-if="file.uncommitted"
-              class="h-2 w-2 shrink-0 fill-current text-amber-400"
-              :title="file.staged ? 'Staged' : 'Uncommitted'"
-            />
-            <span v-if="file.additions || file.deletions" class="shrink-0 space-x-1 text-[10px]">
-              <span v-if="file.additions" class="text-green-400">+{{ file.additions }}</span>
-              <span v-if="file.deletions" class="text-red-400">-{{ file.deletions }}</span>
-            </span>
-          </button>
-        </div>
+        <!-- Multi-repo: grouped by repo -->
+        <template v-if="isMultiRepo">
+          <div v-for="(repoFiles, repoName) in repoChanges" :key="repoName" class="border-b border-border last:border-b-0">
+            <button
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-foreground hover:bg-accent/30"
+              @click="toggleRepoCollapse(String(repoName))"
+            >
+              <ChevronDown
+                class="h-3 w-3 shrink-0 text-muted-foreground transition-transform"
+                :class="collapsedRepos.has(String(repoName)) ? '-rotate-90' : ''"
+              />
+              <span>{{ repoName }}</span>
+              <span class="text-[10px] font-normal text-muted-foreground">({{ repoFiles.length }})</span>
+            </button>
+            <div v-if="!collapsedRepos.has(String(repoName))" class="pb-1">
+              <button
+                v-for="file in repoFiles"
+                :key="file.path"
+                class="flex w-full items-center gap-2 px-3 py-1 pl-7 text-left text-xs transition-colors hover:bg-accent/50"
+                @click="viewDiff(file, String(repoName))"
+              >
+                <component
+                  :is="statusIcon[file.status]"
+                  class="h-3.5 w-3.5 shrink-0"
+                  :class="statusColor[file.status]"
+                />
+                <span class="flex-1 truncate text-foreground" :title="file.path">
+                  {{ file.path }}
+                </span>
+                <Circle
+                  v-if="file.uncommitted"
+                  class="h-2 w-2 shrink-0 fill-current text-amber-400"
+                  :title="file.staged ? 'Staged' : 'Uncommitted'"
+                />
+                <span v-if="file.additions || file.deletions" class="shrink-0 space-x-1 text-[10px]">
+                  <span v-if="file.additions" class="text-green-400">+{{ file.additions }}</span>
+                  <span v-if="file.deletions" class="text-red-400">-{{ file.deletions }}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Single-repo: flat list -->
+        <template v-else>
+          <div class="py-1">
+            <button
+              v-for="file in files"
+              :key="file.path"
+              class="flex w-full items-center gap-2 px-3 py-1 text-left text-xs transition-colors hover:bg-accent/50"
+              @click="viewDiff(file)"
+            >
+              <component
+                :is="statusIcon[file.status]"
+                class="h-3.5 w-3.5 shrink-0"
+                :class="statusColor[file.status]"
+              />
+              <span class="flex-1 truncate text-foreground" :title="file.path">
+                {{ file.path }}
+              </span>
+              <Circle
+                v-if="file.uncommitted"
+                class="h-2 w-2 shrink-0 fill-current text-amber-400"
+                :title="file.staged ? 'Staged' : 'Uncommitted'"
+              />
+              <span v-if="file.additions || file.deletions" class="shrink-0 space-x-1 text-[10px]">
+                <span v-if="file.additions" class="text-green-400">+{{ file.additions }}</span>
+                <span v-if="file.deletions" class="text-red-400">-{{ file.deletions }}</span>
+              </span>
+            </button>
+          </div>
+        </template>
 
         <!-- Staging & commit section (only when uncommitted files exist) -->
         <div v-if="hasUncommitted" class="border-t border-border">
@@ -258,7 +377,7 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
             </div>
             <div
               v-for="file in stagedFiles"
-              :key="'s-' + file.path"
+              :key="'s-' + (file.repo ? file.repo + '/' : '') + file.path"
               class="flex items-center gap-2 py-0.5 text-xs"
             >
               <input
@@ -267,7 +386,9 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
                 class="h-3 w-3 shrink-0 accent-green-400"
                 @click.stop="toggleStage(file)"
               />
-              <span class="truncate text-foreground" :title="file.path">{{ file.path }}</span>
+              <span class="truncate text-foreground" :title="file.path">
+                <span v-if="isMultiRepo && file.repo" class="text-muted-foreground">{{ file.repo }}/</span>{{ file.path }}
+              </span>
             </div>
           </div>
 
@@ -282,7 +403,7 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
             </div>
             <div
               v-for="file in unstagedFiles"
-              :key="'u-' + file.path"
+              :key="'u-' + (file.repo ? file.repo + '/' : '') + file.path"
               class="flex items-center gap-2 py-0.5 text-xs"
             >
               <input
@@ -291,7 +412,9 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
                 class="h-3 w-3 shrink-0"
                 @click.stop="toggleStage(file)"
               />
-              <span class="truncate text-foreground" :title="file.path">{{ file.path }}</span>
+              <span class="truncate text-foreground" :title="file.path">
+                <span v-if="isMultiRepo && file.repo" class="text-muted-foreground">{{ file.repo }}/</span>{{ file.path }}
+              </span>
             </div>
           </div>
 
@@ -328,7 +451,7 @@ defineExpose({ refresh: fetchChanges, isViewingDiff });
         </div>
 
         <!-- Merge section -->
-        <div v-if="files.length" class="border-t border-border px-3 py-2">
+        <div v-if="totalFiles" class="border-t border-border px-3 py-2">
           <div v-if="mergeError" class="mb-1 text-[10px] text-red-400">{{ mergeError }}</div>
           <div v-if="mergeSuccess" class="mb-1 text-[10px] text-green-400">{{ mergeSuccess }}</div>
           <button
