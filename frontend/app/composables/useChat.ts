@@ -122,6 +122,12 @@ export function useChat() {
         };
         break;
 
+      case "cancelled":
+        session.loading = false;
+        session.status = "idle";
+        session.events = [];
+        break;
+
       case "error":
         session.events = session.events.filter((e) => e.type !== "thinking");
         session.messages.push({ id: uid(), role: "error", content: event.text as string });
@@ -198,6 +204,14 @@ export function useChat() {
     }
   }
 
+  async function cancel() {
+    const session = store.activeSession.value;
+    if (!session || !session.loading) return;
+    try {
+      await $fetch(`/api/sessions/${session.id}/cancel`, { method: "POST" });
+    } catch {}
+  }
+
   async function send(text: string) {
     const session = store.activeSession.value;
     if (!session || !text.trim() || session.loading) return;
@@ -242,6 +256,7 @@ export function useChat() {
     ...store,
     model,
     send,
+    cancel,
     respondAskUser,
     respondElicitation,
   };

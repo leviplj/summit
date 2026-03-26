@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, SendHorizontal, Trash2, GitBranch, FileCode, Sun, Moon, Monitor } from "lucide-vue-next";
+import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor } from "lucide-vue-next";
 import type { SessionStatus } from "~~/shared/types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
@@ -30,6 +30,7 @@ const {
   send,
   respondAskUser,
   respondElicitation,
+  cancel,
   newSession,
   selectSession,
   deleteSession,
@@ -44,6 +45,7 @@ const themeIcon = computed(() => {
 });
 
 const input = ref("");
+const cancelling = ref(false);
 const messagesEl = ref<HTMLElement>();
 const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
 const sidebarOpen = ref(true);
@@ -54,6 +56,16 @@ function handleSend() {
   send(input.value);
   input.value = "";
 }
+
+async function handleCancel() {
+  if (cancelling.value) return;
+  cancelling.value = true;
+  await cancel();
+}
+
+watch(loading, (v) => {
+  if (!v) cancelling.value = false;
+});
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey) {
@@ -253,7 +265,17 @@ watch(loading, (isLoading, wasLoading) => {
             @keydown="handleKeydown"
           />
           <button
-            :disabled="loading || !input.trim()"
+            v-if="loading"
+            :disabled="cancelling"
+            class="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+            title="Stop"
+            @click="handleCancel"
+          >
+            <Square class="h-4 w-4" />
+          </button>
+          <button
+            v-else
+            :disabled="!input.trim()"
             class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             @click="handleSend"
           >

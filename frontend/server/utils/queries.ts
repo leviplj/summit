@@ -21,6 +21,7 @@ interface PendingAskUser {
 }
 
 const active = new Map<string, ActiveQuery>();
+const abortControllers = new Map<string, AbortController>();
 const pendingElicitations = new Map<string, PendingElicitation>();
 const pendingAskUser = new Map<string, PendingAskUser>();
 
@@ -101,6 +102,13 @@ export async function startQuery(sessionId: string, text: string) {
   });
 }
 
+export function cancelQuery(sessionId: string): boolean {
+  const controller = abortControllers.get(sessionId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
+}
+
 function finalize(sessionId: string) {
   const aq = active.get(sessionId);
   if (aq) {
@@ -108,17 +116,21 @@ function finalize(sessionId: string) {
     aq.listeners.clear();
     setTimeout(() => active.delete(sessionId), 60_000);
   }
+  abortControllers.delete(sessionId);
   pendingAskUser.delete(sessionId);
 }
 
 async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>, text: string, sessionId: string) {
   const state = createStreamState();
   const errorMessages: Array<{ id: string; role: "error"; content: string }> = [];
+  const abortController = new AbortController();
+  abortControllers.set(sessionId, abortController);
 
   try {
     const q = query({
       prompt: text,
       options: {
+        abortController,
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
@@ -165,9 +177,14 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
       }
     }
   } catch (err: any) {
-    const text = err.message || String(err);
-    emit(sessionId, { type: "error", text });
-    errorMessages.push({ id: String(Date.now()), role: "error", content: text });
+    const aborted = abortController.signal.aborted || err?.name === "AbortError";
+    if (aborted) {
+      emit(sessionId, { type: "cancelled" });
+    } else {
+      const text = err.message || String(err);
+      emit(sessionId, { type: "error", text });
+      errorMessages.push({ id: String(Date.now()), role: "error", content: text });
+    }
   }
 
   // Persist

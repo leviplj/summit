@@ -43,7 +43,8 @@ export interface AppEvent {
     | "error"
     | "done"
     | "elicitation"
-    | "ask_user";
+    | "ask_user"
+    | "cancelled";
   [key: string]: unknown;
 }
 
