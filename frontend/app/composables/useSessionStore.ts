@@ -76,7 +76,6 @@ export function useSessionStore() {
       }
     } catch {}
 
-    await newSession();
     loaded.value = true;
     return [];
   }
@@ -119,7 +118,7 @@ export function useSessionStore() {
     sessions.value.splice(idx, 1);
 
     if (sessions.value.length === 0) {
-      await newSession();
+      activeSessionId.value = "";
     } else if (activeSessionId.value === id) {
       activeSessionId.value = sessions.value[0].id;
     }

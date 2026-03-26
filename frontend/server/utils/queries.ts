@@ -135,6 +135,11 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
         cwd: session.worktreePath || process.cwd(),
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          append: `IMPORTANT: Your working directory is "${session.worktreePath || process.cwd()}". Always create and edit files within this directory. Never write files to the user's home directory or any path outside the working directory unless the user explicitly asks you to.`,
+        },
         toolConfig: { askUserQuestion: { previewFormat: "html" } },
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
         ...(session.model ? { model: session.model } : {}),

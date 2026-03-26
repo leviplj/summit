@@ -206,7 +206,6 @@ watch(loading, (isLoading, wasLoading) => {
             >{{ fullTextResults.find((r) => r.sessionId === s.id)?.snippet }}</span>
           </span>
           <span
-            v-if="sessions.length > 1"
             class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 hover:text-red-400 group-hover:opacity-100"
             @click.stop="deleteSession(s.id)"
           >
@@ -273,7 +272,7 @@ watch(loading, (isLoading, wasLoading) => {
             v-if="messages.length === 0 && !loading"
             class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
           >
-            {{ loaded ? 'Send a message to start' : 'Loading…' }}
+            {{ loaded ? 'Send a message to start a new chat' : 'Loading…' }}
           </div>
 
           <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />

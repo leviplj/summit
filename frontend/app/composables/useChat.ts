@@ -213,8 +213,12 @@ export function useChat() {
   }
 
   async function send(text: string) {
+    if (!text.trim()) return;
+    if (!store.activeSession.value) {
+      await store.newSession();
+    }
     const session = store.activeSession.value;
-    if (!session || !text.trim() || session.loading) return;
+    if (!session || session.loading) return;
 
     session.messages.push({ id: uid(), role: "user", content: text });
     session.loading = true;
