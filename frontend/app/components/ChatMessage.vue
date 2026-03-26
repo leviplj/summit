@@ -27,7 +27,7 @@ const meta = computed(() => {
   if (!m) return "";
   const parts: string[] = [];
   if (m.duration_ms) parts.push(`${(m.duration_ms / 1000).toFixed(1)}s`);
-  if (m.output_tokens) parts.push(`${m.output_tokens} tokens`);
+  if (m.output_tokens) parts.push(`${m.output_tokens.toLocaleString()} tokens`);
   if (m.cost_usd) parts.push(`$${m.cost_usd.toFixed(4)}`);
   return parts.join(" \u00b7 ");
 });

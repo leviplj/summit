@@ -34,6 +34,7 @@ const {
   respondElicitation,
   cancel,
   updateModel,
+  sessionCost,
   newSession,
   selectSession,
   selectPrevSession,
@@ -167,8 +168,9 @@ watch(loading, (isLoading, wasLoading) => {
         </button>
       </nav>
 
-      <div v-if="model" class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-        {{ model }}
+      <div v-if="model || sessionCost" class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+        <div v-if="model">{{ model }}</div>
+        <div v-if="sessionCost">{{ sessionCost.totalTokens.toLocaleString() }} tokens · ${{ sessionCost.totalCost.toFixed(4) }}</div>
       </div>
     </aside>
 

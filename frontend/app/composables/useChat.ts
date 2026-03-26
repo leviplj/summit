@@ -252,9 +252,23 @@ export function useChat() {
     }
   });
 
+  const sessionCost = computed(() => {
+    const msgs = store.activeSession.value?.messages;
+    if (!msgs) return null;
+    let totalCost = 0;
+    let totalTokens = 0;
+    let hasCost = false;
+    for (const m of msgs) {
+      if (m.meta?.cost_usd) { totalCost += m.meta.cost_usd; hasCost = true; }
+      if (m.meta?.output_tokens) { totalTokens += m.meta.output_tokens; }
+    }
+    return hasCost ? { totalCost, totalTokens } : null;
+  });
+
   return {
     ...store,
     model,
+    sessionCost,
     send,
     cancel,
     respondAskUser,
