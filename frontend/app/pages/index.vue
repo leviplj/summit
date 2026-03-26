@@ -5,6 +5,7 @@ import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
 import AskUserQuestions from "~/components/AskUserQuestions.vue";
 import ChangedFiles from "~/components/ChangedFiles.vue";
+import ModelSelector from "~/components/ModelSelector.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -31,6 +32,7 @@ const {
   respondAskUser,
   respondElicitation,
   cancel,
+  updateModel,
   newSession,
   selectSession,
   deleteSession,
@@ -177,6 +179,12 @@ watch(loading, (isLoading, wasLoading) => {
           <GitBranch class="h-3 w-3" />
           {{ activeSession.branch }}
         </span>
+        <ModelSelector
+          v-if="activeSession"
+          :model-value="activeSession.model"
+          :disabled="loading"
+          @update:model-value="(v) => updateModel(activeSession!.id, v)"
+        />
         <div class="flex-1" />
         <button
           class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

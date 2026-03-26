@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ id: string; title?: string }>(event);
+  const body = await readBody<{ id: string; title?: string; model?: string }>(event);
   if (!body?.id) {
     throw createError({ statusCode: 400, message: "Missing id" });
   }
@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
   const session: StoredSession = {
     id: body.id,
     title: body.title || "New chat",
+    model: body.model || null,
     agentSessionId: null,
     worktreePath: wtPath,
     branch,

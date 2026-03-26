@@ -16,6 +16,7 @@ export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "too
 export interface StoredSession {
   id: string;
   title: string;
+  model: string | null;
   agentSessionId: string | null;
   worktreePath: string | null;
   branch: string | null;
@@ -27,6 +28,7 @@ export interface StoredSession {
 export interface SessionListItem {
   id: string;
   title: string;
+  model: string | null;
   branch: string | null;
   messages: ChatMessage[];
   hasActiveQuery: boolean;

@@ -3,6 +3,7 @@ import type { ChatMessage, SessionStatus, SessionListItem, ElicitationPayload, A
 export interface ClientSession {
   id: string;
   title: string;
+  model: string | null;
   branch: string | null;
   messages: ChatMessage[];
   events: ToolEvent[];
@@ -45,6 +46,7 @@ export function useSessionStore() {
         sessions.value = data.map((s) => ({
           id: s.id,
           title: s.title,
+          model: s.model || null,
           branch: s.branch || null,
           messages: s.messages || [],
           events: [],
@@ -73,6 +75,7 @@ export function useSessionStore() {
     const session: ClientSession = {
       id,
       title: "New chat",
+      model: null,
       branch: null,
       messages: [],
       events: [],
@@ -115,6 +118,17 @@ export function useSessionStore() {
     } catch {}
   }
 
+  async function updateModel(sessionId: string, model: string | null) {
+    const s = sessions.value.find((s) => s.id === sessionId);
+    if (s) s.model = model;
+    try {
+      await $fetch(`/api/sessions/${sessionId}`, {
+        method: "PUT",
+        body: { model },
+      });
+    } catch {}
+  }
+
   async function reloadSession(id: string) {
     try {
       const stored = await $fetch<any>(`/api/sessions/${id}`);
@@ -142,5 +156,6 @@ export function useSessionStore() {
     selectSession,
     deleteSession,
     reloadSession,
+    updateModel,
   };
 }

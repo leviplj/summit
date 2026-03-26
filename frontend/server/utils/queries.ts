@@ -137,6 +137,7 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
         cwd: session.worktreePath || process.cwd(),
         toolConfig: { askUserQuestion: { previewFormat: "html" } },
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
+        ...(session.model ? { model: session.model } : {}),
         canUseTool: async (toolName, input) => {
           if (toolName === "AskUserQuestion") {
             emit(sessionId, { type: "ask_user", questions: input.questions });

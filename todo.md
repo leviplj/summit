@@ -1,5 +1,5 @@
-- [ ] cancel-running-query (18 tasks) — Essential UX safety net
-- [ ] model-selector (17 tasks) — Per-session model selection
+- [x] cancel-running-query (18 tasks) — Essential UX safety net
+- [x] model-selector (17 tasks) — Per-session model selection
 - [ ] keyboard-shortcuts (13 tasks) — Global keyboard shortcuts
 - [ ] cost-tracking (9 tasks) — Per-message and session cost display
 - [ ] session-search (23 tasks) — Search/filter sessions

@@ -22,7 +22,6 @@ export function createStreamState(): AgentStreamState {
  */
 export function translateMessage(message: any, state: AgentStreamState): AppEvent[] {
   const events: AppEvent[] = [];
-
   switch (message.type) {
     case "system": {
       const data = message.data ?? message;
