@@ -1,8 +1,0 @@
-- [x] cancel-running-query (18 tasks) — Essential UX safety net
-- [x] model-selector (17 tasks) — Per-session model selection
-- [x] keyboard-shortcuts (13 tasks) — Global keyboard shortcuts
-- [x] cost-tracking (9 tasks) — Per-message and session cost display
-- [x] session-search (23 tasks) — Search/filter sessions
-- [x] commit-and-pr-management — Git commit, staging, and merge from UI
-- [x] allow-delete-last-chat — Allow deleting the last chat, don't auto-create on startup
-- [x] multi-project-support (32 tasks) — Multi-repo project support
