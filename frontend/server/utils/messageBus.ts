@@ -170,4 +170,14 @@ export class MessageBus {
     this.mailboxes.clear();
     this.waitsFor.clear();
   }
+
+  /**
+   * Reset the bus so it can be reused after dispose (e.g. team dismissed then recreated).
+   */
+  reset(): void {
+    this.disposed = false;
+    this.waiters.clear();
+    this.mailboxes.clear();
+    this.waitsFor.clear();
+  }
 }

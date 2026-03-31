@@ -53,6 +53,19 @@ const {
   team,
 } = useChat();
 
+// Derive effective session status accounting for teammate states
+function effectiveStatus(s: typeof sessions.value[0]): SessionStatus {
+  // Teammate needing input always takes priority — even if orchestrator is busy on check_mailbox
+  if (s.teammates.length > 0 && s.teammates.some((t) => t.askUser)) return "ask_user";
+  // If the orchestrator itself is busy, show its status
+  if (s.status !== "idle") return s.status;
+  // Check remaining teammate states
+  if (s.teammates.length > 0) {
+    if (s.teammates.some((t) => t.status === "working" || t.status === "waiting")) return "tool";
+  }
+  return s.status;
+}
+
 // Filtered messages: when a team tab is selected, show that teammate's messages
 const displayMessages = computed(() => {
   if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
@@ -237,7 +250,8 @@ const attentionProjectIds = computed(() => {
   const ids = new Set<string>();
   for (const s of sessions.value) {
     console.log(`Session ${s.id} status:`, s.status);
-    if ((s.status === "ask_user" || s.status === "elicitation") && s.projectId) {
+    const es = effectiveStatus(s);
+    if ((es === "ask_user" || es === "elicitation") && s.projectId) {
       ids.add(s.projectId);
     }
   }
@@ -353,14 +367,14 @@ onMounted(() => {
         >
           <span class="relative flex h-4 w-4 shrink-0 items-center justify-center">
             <span
-              v-if="statusConfig[s.status].pulse"
+              v-if="statusConfig[effectiveStatus(s)].pulse"
               class="absolute h-2.5 w-2.5 animate-ping rounded-full opacity-50"
-              :class="statusConfig[s.status].color"
+              :class="statusConfig[effectiveStatus(s)].color"
             />
             <span
               class="relative h-2 w-2 rounded-full"
-              :class="statusConfig[s.status].color"
-              :title="statusConfig[s.status].label"
+              :class="statusConfig[effectiveStatus(s)].color"
+              :title="statusConfig[effectiveStatus(s)].label"
             />
           </span>
           <span class="flex-1 truncate">
@@ -368,15 +382,15 @@ onMounted(() => {
               <HighlightMatch :text="s.title" :query="searchQuery" />
             </span>
             <span
-              v-if="s.status !== 'idle'"
+              v-if="effectiveStatus(s) !== 'idle'"
               class="block truncate text-[10px] leading-tight"
               :class="{
-                'text-red-400': s.status === 'error',
-                'text-cyan-400': s.status === 'ask_user',
-                'text-amber-400': s.status === 'elicitation',
-                'text-muted-foreground': s.status !== 'error' && s.status !== 'ask_user' && s.status !== 'elicitation',
+                'text-red-400': effectiveStatus(s) === 'error',
+                'text-cyan-400': effectiveStatus(s) === 'ask_user',
+                'text-amber-400': effectiveStatus(s) === 'elicitation',
+                'text-muted-foreground': effectiveStatus(s) !== 'error' && effectiveStatus(s) !== 'ask_user' && effectiveStatus(s) !== 'elicitation',
               }"
-            >{{ statusConfig[s.status].label }}</span>
+            >{{ statusConfig[effectiveStatus(s)].label }}</span>
             <span
               v-if="fullTextEnabled && searchQuery && fullTextResults.find((r) => r.sessionId === s.id) && !s.title.toLowerCase().includes(searchQuery.toLowerCase())"
               class="block truncate text-[10px] leading-tight text-muted-foreground italic"

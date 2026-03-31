@@ -28,11 +28,11 @@ const pendingElicitations = new Map<string, PendingElicitation>();
 const pendingAskUser = new Map<string, PendingAskUser>();
 const teamManagers = new Map<string, TeamManager>();
 
-export function resolveAskUser(sessionId: string, answer: Record<string, string>) {
-  const pending = pendingAskUser.get(sessionId);
+export function resolveAskUser(askId: string, answer: Record<string, string>) {
+  const pending = pendingAskUser.get(askId);
   if (!pending) return false;
   pending.resolve(answer);
-  pendingAskUser.delete(sessionId);
+  pendingAskUser.delete(askId);
   return true;
 }
 
@@ -87,10 +87,13 @@ export function subscribe(
 
 export async function startQuery(sessionId: string, text: string) {
   const existing = active.get(sessionId);
-  if (existing && !existing.done) return;
+  // Block only if an orchestrator query is actively running (has an abort controller)
+  if (existing && !existing.done && abortControllers.has(sessionId)) return;
 
-  // Set placeholder synchronously to prevent race conditions
-  const aq: ActiveQuery = { events: [], done: false, listeners: new Set() };
+  // Reuse the existing ActiveQuery if it's alive for teammates, otherwise create new
+  const aq: ActiveQuery = (existing && !existing.done)
+    ? existing
+    : { events: [], done: false, listeners: new Set() };
   active.set(sessionId, aq);
 
   const session = await getStoredSession(sessionId);
@@ -117,6 +120,21 @@ export function cancelQuery(sessionId: string): boolean {
   return true;
 }
 
+export function getTeamState(sessionId: string) {
+  const tm = teamManagers.get(sessionId);
+  if (!tm || tm.getTeammates().length === 0) return null;
+  return { teammates: tm.getTeammates(), messages: [] };
+}
+
+export function disposeSession(sessionId: string): void {
+  cancelQuery(sessionId);
+  const tm = teamManagers.get(sessionId);
+  if (tm) {
+    tm.dispose();
+    teamManagers.delete(sessionId);
+  }
+}
+
 function finalize(sessionId: string) {
   const aq = active.get(sessionId);
   if (aq) {
@@ -125,12 +143,9 @@ function finalize(sessionId: string) {
     setTimeout(() => active.delete(sessionId), 60_000);
   }
   abortControllers.delete(sessionId);
-  pendingAskUser.delete(sessionId);
-  const tm = teamManagers.get(sessionId);
-  if (tm) {
-    tm.dispose();
-    teamManagers.delete(sessionId);
-  }
+  // pendingAskUser entries are keyed by unique askId now, not sessionId — no blanket delete needed
+  // Team manager persists across queries — disposed only on session delete
+  // or when the user explicitly tells the orchestrator to end the team
 }
 
 function getSessionCwd(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>): string {
@@ -167,9 +182,10 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
     // extraEmitFields allows teammates to attach their identity to emitted events
     const canUseToolHandler = async (toolName: string, input: any, extraEmitFields?: Record<string, unknown>) => {
       if (toolName === "AskUserQuestion") {
-        emit(sessionId, { type: "ask_user", questions: input.questions, ...extraEmitFields });
+        const askId = crypto.randomUUID();
+        emit(sessionId, { type: "ask_user", askId, questions: input.questions, ...extraEmitFields });
         const answers = await new Promise<Record<string, string>>((resolve) => {
-          pendingAskUser.set(sessionId, { resolve });
+          pendingAskUser.set(askId, { resolve });
         });
         return { behavior: "allow" as const, updatedInput: { ...input, answers } };
       }
@@ -191,9 +207,14 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
       });
     };
 
-    // Initialize team manager and orchestrator MCP server
-    const teamManager = new TeamManager(sessionId, session, emit, canUseToolHandler, onElicitationHandler);
-    teamManagers.set(sessionId, teamManager);
+    // Reuse existing team manager if one persists from a prior turn, otherwise create new
+    let teamManager = teamManagers.get(sessionId);
+    if (teamManager) {
+      teamManager.updateHandlers(emit, canUseToolHandler, onElicitationHandler);
+    } else {
+      teamManager = new TeamManager(sessionId, session, emit, canUseToolHandler, onElicitationHandler);
+      teamManagers.set(sessionId, teamManager);
+    }
     const orchestratorMcpServer = createOrchestratorMcpServer(teamManager);
 
     const repoList = Object.entries(session.worktrees).map(([repo, path]) => `- ${repo}: ${path}`).join("\n");
@@ -211,12 +232,13 @@ IMPORTANT: If you have a multiple choices question, use the AskUserQuestion tool
 
 ## Agent Teams
 
-You have orchestrator tools available to create a team of specialized agents when the task benefits from parallel work across different domains (e.g., backend + frontend, or multiple services).
+You have orchestrator tools available to create a team of specialized agents when the task benefits from parallel work or collaborative discussion.
 
 **When to create a team:**
 - The task involves changes across multiple repos or distinct areas of a monorepo
 - Parallel work by specialists would be more efficient than doing it all yourself
-- There are clear domain boundaries (backend API, frontend UI, QA testing, etc.)
+- The user wants a group discussion, debate, brainstorm, or collaborative exploration of a topic
+- There are clear domain boundaries or distinct perspectives to represent
 
 **When NOT to create a team (just do it yourself):**
 - Simple single-file changes
@@ -225,22 +247,41 @@ You have orchestrator tools available to create a team of specialized agents whe
 
 **How to create a team:**
 1. Analyze the request and decide what roles are needed
-2. Use create_teammate for each role with a detailed system prompt that includes:
-   - Their specific responsibilities
-   - Which directory/repo they should work in
-   - What to coordinate with other teammates
-3. Use wait_for_next_completion to process each teammate as they finish — call it in a loop so you can react to each result individually
-4. Optionally use check_team_status at any time to see the current state of all teammates without blocking
-5. Summarize the results to the user
+2. Use create_teammate for each role with a detailed system prompt
+3. After creating ALL teammates, use broadcast to send the full team roster and initial instructions
+4. Tell the user the team is ready
+5. **Stay in a loop** — call check_mailbox repeatedly to receive messages from teammates. Process each message (relay info, respond, coordinate) and then call check_mailbox again. Do NOT finish your turn while teammates are still active.
 
-**Teammate scoping:**
+**Communication tools — important distinction:**
+- send_message: send a message to a specific teammate
+- check_mailbox: block until a teammate sends YOU a message back — use this after every action that might trigger a teammate reply. Always loop on this.
+- wait_for_next_completion: block until a teammate calls notify_done (fully finished). Use this only when you're waiting for teammates to finish all their work.
+- check_team_status: non-blocking poll of all teammate statuses
+- Teammates can also use AskUserQuestion to talk to the user directly — they don't always need to go through you
+
+**IMPORTANT — staying alive as orchestrator:**
+- After creating and broadcasting to a team, you MUST loop on check_mailbox to stay available for teammate messages
+- Teammates will send you progress updates, results, and questions — if you finish your turn, they get stuck waiting for replies
+- Only finish your turn when all teammates have called notify_done (you'll know from wait_for_next_completion or check_team_status)
+
+**Team lifecycle:**
+- The team persists across messages — do NOT recreate teammates each turn
+- Both you and the teammates loop on check_mailbox — everyone stays alive until work is complete
+- Use dismiss_team only when the user explicitly asks to end the team or the project is complete
+
+**Teammate scoping (for code tasks):**
 - Multi-repo projects: Scope each teammate to their repo path
-- Monorepo projects: Scope each teammate to their subdirectory (e.g., packages/backend, packages/frontend)
-- For shared code: Instruct one teammate to handle it and message others when done
+- Monorepo projects: Scope each teammate to their subdirectory
 
 **Available repos for scoping:**
 ${repoList}
 `;
+
+    // Inject current team state if a team already exists
+    const existingTeammates = teamManager.getTeammates();
+    const teamStateAppend = existingTeammates.length > 0
+      ? `\n\n## Current Team State\nYou already have an active team. Do NOT recreate teammates that already exist.\n${existingTeammates.map((t) => `- ${t.role} (ID: ${t.id}) — status: ${t.status}`).join("\n")}\n\nUse send_message to talk to them, check_mailbox to receive their replies.`
+      : "";
 
     const q = query({
       prompt: text,
@@ -252,7 +293,7 @@ ${repoList}
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: orchestratorPromptAppend,
+          append: orchestratorPromptAppend + teamStateAppend,
         },
         cwd: resolvedCwd,
         ...(getSessionAdditionalDirs(session).length > 0
@@ -318,6 +359,20 @@ ${repoList}
   }
 
   await saveSession(session);
-  emit(sessionId, { type: "done" });
-  finalize(sessionId);
+
+  // If teammates are still active, keep the stream open — emit turn_done instead of done
+  const activeTm = teamManagers.get(sessionId);
+  if (activeTm && activeTm.activeTeammateCount > 0) {
+    emit(sessionId, { type: "turn_done" });
+    // Clean up orchestrator resources but keep ActiveQuery alive for teammate events
+    abortControllers.delete(sessionId);
+    // When all teammates eventually finish, emit done and finalize
+    activeTm.onAllTeammateDone(() => {
+      emit(sessionId, { type: "done" });
+      finalize(sessionId);
+    });
+  } else {
+    emit(sessionId, { type: "done" });
+    finalize(sessionId);
+  }
 }

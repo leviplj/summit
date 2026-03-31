@@ -1,29 +1,29 @@
 import type { AppEvent, TeammateStatus } from "~~/shared/types";
-import type { ToolEvent } from "./useSessionStore";
+import type { ClientSession } from "./useSessionStore";
 
-export interface TeammateTab {
-  id: string;
-  role: string;
-  status: TeammateStatus;
-  events: ToolEvent[];
-  messages: Array<{ id: string; role: "assistant" | "error"; content: string }>;
-  streamText: string;
-  askUser: any[] | null;
-}
+export function useTeamStore(getSession: () => ClientSession | undefined) {
 
-export function useTeamStore() {
-  const teammates = ref<TeammateTab[]>([]);
-  const activeTabId = ref<string | null>(null);
-  const teamActive = ref(false);
+  const teammates = computed(() => getSession()?.teammates ?? []);
+  const activeTabId = computed(() => getSession()?.activeTabId ?? null);
+  const teamActive = computed(() => getSession()?.teamActive ?? false);
+
+  const activeTab = computed(() => {
+    const s = getSession();
+    if (!s || !s.activeTabId || s.activeTabId === "orchestrator") return null;
+    return s.teammates.find((t) => t.id === s.activeTabId) ?? null;
+  });
 
   function handleTeamEvent(event: AppEvent): boolean {
+    const session = getSession();
+    if (!session) return false;
+
     switch (event.type) {
       case "team_created": {
-        teamActive.value = true;
+        session.teamActive = true;
         const teamList = event.teammates as Array<{ id: string; role: string; status: TeammateStatus }>;
         for (const t of teamList) {
-          if (!teammates.value.find((tab) => tab.id === t.id)) {
-            teammates.value.push({
+          if (!session.teammates.find((tab) => tab.id === t.id)) {
+            session.teammates.push({
               id: t.id,
               role: t.role,
               status: t.status,
@@ -31,18 +31,19 @@ export function useTeamStore() {
               messages: [],
               streamText: "",
               askUser: null,
+              costUsd: 0,
+              outputTokens: 0,
             });
           }
         }
-        // Auto-select first teammate if no tab selected
-        if (!activeTabId.value && teammates.value.length > 0) {
-          activeTabId.value = "orchestrator";
+        if (!session.activeTabId && session.teammates.length > 0) {
+          session.activeTabId = "orchestrator";
         }
         return true;
       }
 
       case "teammate_status": {
-        const tab = teammates.value.find((t) => t.id === event.teammateId);
+        const tab = session.teammates.find((t) => t.id === event.teammateId);
         if (tab) {
           tab.status = event.status as TeammateStatus;
         }
@@ -50,8 +51,7 @@ export function useTeamStore() {
       }
 
       case "teammate_message": {
-        // Add to both sender and recipient tabs
-        const tab = teammates.value.find((t) => t.id === event.teammateId);
+        const tab = session.teammates.find((t) => t.id === event.teammateId);
         if (tab) {
           const direction = event.direction as string;
           const otherName = direction === "sent"
@@ -68,7 +68,7 @@ export function useTeamStore() {
       }
 
       case "teammate_done": {
-        const tab = teammates.value.find((t) => t.id === event.teammateId);
+        const tab = session.teammates.find((t) => t.id === event.teammateId);
         if (tab) {
           tab.status = "done";
           tab.messages.push({
@@ -85,14 +85,11 @@ export function useTeamStore() {
     }
   }
 
-  /**
-   * Route a regular event (thinking, tool_use, text, etc.) to the correct teammate tab.
-   * Returns true if the event was routed to a teammate, false if it's for the orchestrator.
-   */
   function routeTeammateEvent(event: AppEvent): boolean {
-    if (!teamActive.value || !event.teammateId) return false;
+    const session = getSession();
+    if (!session || !session.teamActive || !event.teammateId) return false;
 
-    const tab = teammates.value.find((t) => t.id === event.teammateId);
+    const tab = session.teammates.find((t) => t.id === event.teammateId);
     if (!tab) return false;
 
     switch (event.type) {
@@ -101,15 +98,21 @@ export function useTeamStore() {
         tab.events.push({ id: String(Date.now()), type: "thinking", label: "Thinking" });
         break;
 
-      case "tool_use":
+      case "tool_use": {
         tab.status = "working";
+        // Keep only the last few completed tool pairs + any in-progress items
+        const MAX_EVENTS = 10;
+        if (tab.events.length > MAX_EVENTS) {
+          tab.events = tab.events.slice(-MAX_EVENTS);
+        }
         tab.events = tab.events.filter((e) => e.type !== "thinking");
         tab.events.push({
           id: String(Date.now()),
           type: "tool_use",
-          label: `${event.tool}: ${(event.input as any)?.file_path || (event.input as any)?.command || ""}`,
+          label: formatToolUse(event.tool as string, event.input as Record<string, any>),
         });
         break;
+      }
 
       case "tool_result":
         tab.events.push({
@@ -132,12 +135,15 @@ export function useTeamStore() {
             content: event.text as string,
           });
         }
+        if (event.cost_usd) tab.costUsd += event.cost_usd as number;
+        if (event.output_tokens) tab.outputTokens += event.output_tokens as number;
         tab.streamText = "";
         tab.events = [];
         break;
 
       case "ask_user":
         tab.askUser = (event.questions as any[]) || [];
+        tab.askId = event.askId as string | undefined;
         break;
 
       case "error":
@@ -157,19 +163,17 @@ export function useTeamStore() {
   }
 
   function selectTab(id: string) {
-    activeTabId.value = id;
+    const session = getSession();
+    if (session) session.activeTabId = id;
   }
 
   function reset() {
-    teammates.value = [];
-    activeTabId.value = null;
-    teamActive.value = false;
+    const session = getSession();
+    if (!session) return;
+    session.teammates = [];
+    session.activeTabId = null;
+    session.teamActive = false;
   }
-
-  const activeTab = computed(() => {
-    if (activeTabId.value === "orchestrator" || !activeTabId.value) return null;
-    return teammates.value.find((t) => t.id === activeTabId.value) ?? null;
-  });
 
   return {
     teammates,

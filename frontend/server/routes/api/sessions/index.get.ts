@@ -24,5 +24,6 @@ export default defineEventHandler(async (event): Promise<SessionListItem[]> => {
     worktrees: s.worktrees || {},
     messages: s.messages,
     hasActiveQuery: activeSet.has(s.id),
+    teamState: getTeamState(s.id) || s.teamState || undefined,
   }));
 });

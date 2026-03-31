@@ -37,6 +37,7 @@ export interface SessionListItem {
   worktrees: Record<string, string>;
   messages: ChatMessage[];
   hasActiveQuery: boolean;
+  teamState?: TeamState;
 }
 
 export interface AppEvent {
@@ -49,6 +50,7 @@ export interface AppEvent {
     | "result"
     | "error"
     | "done"
+    | "turn_done"
     | "elicitation"
     | "ask_user"
     | "cancelled"

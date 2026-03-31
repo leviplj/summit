@@ -37,6 +37,7 @@ export class TeamManager {
   private canUseToolFn: CanUseToolFn;
   private onElicitationFn: OnElicitationFn;
   private firstTeammateCreated = false;
+  private onAllTeammateDoneFn?: () => void;
 
   constructor(
     sessionId: string,
@@ -50,6 +51,22 @@ export class TeamManager {
     this.emitFn = emitFn;
     this.canUseToolFn = canUseToolFn;
     this.onElicitationFn = onElicitationFn;
+  }
+
+  /**
+   * Update handler references when reusing across query turns.
+   */
+  updateHandlers(emitFn: EmitFn, canUseToolFn: CanUseToolFn, onElicitationFn: OnElicitationFn): void {
+    this.emitFn = emitFn;
+    this.canUseToolFn = canUseToolFn;
+    this.onElicitationFn = onElicitationFn;
+  }
+
+  /**
+   * Register a callback to fire when all teammates reach a terminal state.
+   */
+  onAllTeammateDone(fn: () => void): void {
+    this.onAllTeammateDoneFn = fn;
   }
 
   get activeTeammateCount(): number {
@@ -125,14 +142,16 @@ Your teammate ID is: ${id}
 ${scopePath ? `Your workspace scope: ${scopePath}` : ""}
 
 Other teammates:
-${otherTeammates || "(none yet)"}
+${otherTeammates || "(none yet — the orchestrator will broadcast the full roster once the team is assembled)"}
 
 You have the following team communication tools:
-- check_mailbox: Wait for a message from another teammate. Use the 'from' parameter to wait for a specific teammate.
-- send_message: Send a message to another teammate by their ID (e.g., "backend", "frontend").
-- notify_done: Signal that you have completed your work. You MUST call this when finished.
+- check_mailbox: Wait for a message from another teammate or the orchestrator. Use the 'from' parameter to wait for a specific teammate.
+- send_message: Send a message to another teammate by their ID (e.g., "backend", "frontend"), or to "orchestrator" to reply to the orchestrator.
+- notify_done: Signal that you have completed ALL your work. Only call this when you are truly finished with everything.
 
-IMPORTANT: When you are done with all your tasks, you MUST call notify_done with a summary of what you accomplished.`;
+IMPORTANT: Start by calling check_mailbox to receive the initial broadcast from the orchestrator.
+IMPORTANT: After handling each message, call check_mailbox again to wait for the next one. Keep looping — do NOT call notify_done until you are explicitly told the project is complete or you have no more work to do.
+IMPORTANT: When you need to reply to the orchestrator (e.g., to ask the user a question or report progress), use send_message with to="orchestrator", then call check_mailbox to wait for their response.`;
 
     // Start the teammate query in the background
     this.runTeammateQuery(id, role, fullPrompt, abortController);
@@ -190,6 +209,9 @@ IMPORTANT: When you are done with all your tasks, you MUST call notify_done with
           });
         }
       }
+
+      // Query finished — finalize the teammate (emits done events now that generation is complete)
+      this.finalizeTeammate(id);
     } catch (err: any) {
       const aborted = abortController.signal.aborted || err?.name === "AbortError";
       if (aborted) {
@@ -248,8 +270,21 @@ IMPORTANT: When you are done with all your tasks, you MUST call notify_done with
   markTeammateDone(id: string, summary: string): void {
     const entry = this.teammates.get(id);
     if (!entry) return;
-    entry.status = "done";
+    // Just record the summary — the actual "done" transition happens
+    // in finalizeTeammate() after the query finishes generating.
     entry.doneSummary = summary;
+  }
+
+  /**
+   * Finalize a teammate after their query completes. If they called notify_done,
+   * emit the done events now. Otherwise treat as an implicit completion.
+   */
+  finalizeTeammate(id: string): void {
+    const entry = this.teammates.get(id);
+    if (!entry || entry.status === "done" || entry.status === "cancelled" || entry.status === "error") return;
+
+    const summary = entry.doneSummary || "Completed";
+    entry.status = "done";
 
     this.emitFn(this.sessionId, {
       type: "teammate_done",
@@ -361,6 +396,9 @@ IMPORTANT: When you are done with all your tasks, you MUST call notify_done with
     this.teamWaiters = [];
     this.completionQueue = [];
     this.completionWaiters = [];
+    this.firstTeammateCreated = false;
+    // Reset the bus so it can be reused if the orchestrator creates a new team
+    this.messageBus.reset();
   }
 
   private updateStatus(id: string, status: TeammateStatus): void {
@@ -388,12 +426,18 @@ IMPORTANT: When you are done with all your tasks, you MUST call notify_done with
     const allDone = Array.from(this.teammates.values()).every(
       (t) => t.status === "done" || t.status === "error" || t.status === "cancelled",
     );
-    if (allDone && this.teamWaiters.length > 0) {
-      const summaries = this.collectSummaries();
-      for (const waiter of this.teamWaiters) {
-        waiter.resolve(summaries);
+    if (allDone) {
+      if (this.teamWaiters.length > 0) {
+        const summaries = this.collectSummaries();
+        for (const waiter of this.teamWaiters) {
+          waiter.resolve(summaries);
+        }
+        this.teamWaiters = [];
       }
-      this.teamWaiters = [];
+      if (this.onAllTeammateDoneFn) {
+        this.onAllTeammateDoneFn();
+        this.onAllTeammateDoneFn = undefined;
+      }
     }
   }
 

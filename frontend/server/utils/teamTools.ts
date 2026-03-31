@@ -104,6 +104,42 @@ export function createOrchestratorMcpServer(manager: TeamManager) {
     },
   );
 
+  const sendMessage = tool(
+    "send_message",
+    "Send a message to a specific teammate. Use this to relay user instructions, ask for status, or give new tasks to a particular teammate.",
+    {
+      to: z.string().describe("The teammate ID to send the message to"),
+      content: z.string().describe("The message content"),
+    },
+    async (args) => {
+      manager.deliverMessage("orchestrator", args.to, args.content);
+      return {
+        content: [{ type: "text" as const, text: `Message sent to ${args.to}.` }],
+      };
+    },
+  );
+
+  const checkMailbox = tool(
+    "check_mailbox",
+    "Wait for and receive a message from a teammate. Blocks until a message arrives. Use the optional 'from' parameter to wait for a specific teammate. This is how you receive replies from teammates after sending them a message.",
+    {
+      from: z.string().optional().describe("Only receive messages from this teammate ID. If omitted, receives the next message from anyone."),
+    },
+    async (args) => {
+      try {
+        const msg = await manager.messageBus.receive("orchestrator", args.from);
+        return {
+          content: [{ type: "text" as const, text: `Message from ${msg.from}: ${msg.content}` }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${err.message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   const checkTeamStatus = tool(
     "check_team_status",
     "Check the current status of all teammates without blocking. Returns each teammate's ID, role, status (working/waiting/done/error/cancelled), and completion summary if available.",
@@ -166,9 +202,21 @@ export function createOrchestratorMcpServer(manager: TeamManager) {
     },
   );
 
+  const dismissTeam = tool(
+    "dismiss_team",
+    "Dispose the entire team, cancelling all active teammates. Use when the user explicitly says to end/dismiss/disband the team, or when the project is complete.",
+    {},
+    async () => {
+      manager.dispose();
+      return {
+        content: [{ type: "text" as const, text: "Team dismissed. All teammates have been cancelled and cleaned up." }],
+      };
+    },
+  );
+
   return createSdkMcpServer({
     name: "orchestrator",
     version: "1.0.0",
-    tools: [createTeammate, broadcast, checkTeamStatus, waitForNextCompletion, cancelTeammate],
+    tools: [createTeammate, broadcast, sendMessage, checkMailbox, checkTeamStatus, waitForNextCompletion, cancelTeammate, dismissTeam],
   });
 }
