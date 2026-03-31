@@ -10,6 +10,8 @@ import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
 import HighlightMatch from "~/components/HighlightMatch.vue";
 import ProjectSwitcher from "~/components/ProjectSwitcher.vue";
 import ProjectConfigDialog from "~/components/ProjectConfigDialog.vue";
+import TeamTabBar from "~/components/TeamTabBar.vue";
+import TeamStatusBar from "~/components/TeamStatusBar.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -48,7 +50,33 @@ const {
   selectPrevSession,
   selectNextSession,
   deleteSession,
+  team,
 } = useChat();
+
+// Filtered messages: when a team tab is selected, show that teammate's messages
+const displayMessages = computed(() => {
+  if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
+    return messages.value;
+  }
+  const tab = team.activeTab.value;
+  return tab?.messages ?? [];
+});
+
+const displayEvents = computed(() => {
+  if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
+    return events.value;
+  }
+  const tab = team.activeTab.value;
+  return tab?.events ?? [];
+});
+
+const displayAskUser = computed(() => {
+  if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
+    return askUser.value;
+  }
+  const tab = team.activeTab.value;
+  return tab?.askUser ?? null;
+});
 
 const projectStore = useProjectStore();
 const { projects, activeProject } = projectStore;
@@ -135,7 +163,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 watch(
-  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length, () => elicitation.value, () => askUser.value],
+  [() => displayMessages.value.length, () => displayMessages.value.at(-1)?.content, () => displayEvents.value.length, () => elicitation.value, () => askUser.value],
   () => {
     nextTick(() => {
       messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: "smooth" });
@@ -467,23 +495,35 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Team tab bar -->
+      <TeamTabBar
+        v-if="!showProjectDetails && team.teamActive.value"
+        :teammates="team.teammates.value"
+        :active-tab-id="team.activeTabId.value"
+        @select="team.selectTab"
+      />
+      <TeamStatusBar
+        v-if="!showProjectDetails && team.teamActive.value"
+        :teammates="team.teammates.value"
+      />
+
       <!-- Messages -->
-      <div v-else ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
+      <div v-if="!showProjectDetails" ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
         <div class="mx-auto flex max-w-3xl flex-col gap-4">
           <div
-            v-if="messages.length === 0 && !loading"
+            v-if="displayMessages.length === 0 && !loading"
             class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
           >
             {{ loaded ? 'Send a message to start a new chat' : 'Loading…' }}
           </div>
 
-          <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
+          <ChatMessage v-for="msg in displayMessages" :key="msg.id" :message="msg" />
 
           <!-- Tool events -->
-          <div v-if="events.length" class="flex justify-start">
+          <div v-if="displayEvents.length" class="flex justify-start">
             <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
               <div
-                v-for="ev in events"
+                v-for="ev in displayEvents"
                 :key="ev.id"
                 class="flex items-center gap-2 text-xs"
                 :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
@@ -500,9 +540,9 @@ onMounted(() => {
           </div>
 
           <!-- AskUserQuestion -->
-          <div v-if="askUser" class="flex justify-start">
+          <div v-if="displayAskUser" class="flex justify-start">
             <AskUserQuestions
-              :questions="askUser"
+              :questions="displayAskUser"
               @answer="(answers) => respondAskUser(answers)"
             />
           </div>
@@ -515,7 +555,7 @@ onMounted(() => {
             />
           </div>
 
-          <div v-if="loading && !events.length && !elicitation && !askUser" class="flex justify-start">
+          <div v-if="loading && !displayEvents.length && !elicitation && !displayAskUser" class="flex justify-start">
             <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
               <span class="thinking-dots text-muted-foreground">
                 <span>.</span><span>.</span><span>.</span>

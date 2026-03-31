@@ -26,11 +26,21 @@ export function useChat() {
   const store = useSessionStore();
   const { connect } = useStream();
   const model = ref("");
+  const team = useTeamStore();
+
+  // Reset team state when switching sessions
+  watch(() => store.activeSessionId.value, () => {
+    team.reset();
+  });
 
   // Per-session streaming state (ephemeral, not persisted)
   const streamState = new Map<string, { msgId: string; text: string }>();
 
   function handleEvent(session: ClientSession, event: AppEvent) {
+    // Route team-specific events to team store
+    if (team.handleTeamEvent(event)) return;
+    if (team.routeTeammateEvent(event)) return;
+
     const state = streamState.get(session.id);
 
     switch (event.type) {
@@ -104,6 +114,7 @@ export function useChat() {
         session.askUser = null;
         session.elicitation = null;
         streamState.delete(session.id);
+        team.reset();
         store.reloadSession(session.id);
         break;
 
@@ -169,9 +180,17 @@ export function useChat() {
 
   async function respondAskUser(answers: Record<string, string>) {
     const session = store.activeSession.value;
-    if (!session?.askUser) return;
+    if (!session) return;
 
-    session.askUser = null;
+    // Clear askUser from the active teammate tab if applicable
+    const activeTab = team.activeTab.value;
+    if (activeTab?.askUser) {
+      activeTab.askUser = null;
+    } else if (session.askUser) {
+      session.askUser = null;
+    } else {
+      return;
+    }
     session.status = "waiting";
 
     try {
@@ -278,6 +297,7 @@ export function useChat() {
     ...store,
     model,
     sessionCost,
+    team,
     send,
     cancel,
     respondAskUser,

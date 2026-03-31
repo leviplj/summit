@@ -23,6 +23,7 @@ export interface StoredSession {
   branch: string | null;
   worktrees: Record<string, string>;
   messages: ChatMessage[];
+  teamState?: TeamState;
   createdAt: string;
   updatedAt: string;
 }
@@ -50,7 +51,13 @@ export interface AppEvent {
     | "done"
     | "elicitation"
     | "ask_user"
-    | "cancelled";
+    | "cancelled"
+    | "team_created"
+    | "teammate_message"
+    | "teammate_done"
+    | "teammate_status";
+  teammateId?: string;
+  teammateName?: string;
   [key: string]: unknown;
 }
 
@@ -88,4 +95,28 @@ export interface FileChange {
   deletions: number;
   uncommitted: boolean;
   staged: boolean;
+}
+
+// --- Agent Teams ---
+
+export type TeammateStatus = "working" | "waiting" | "done" | "error" | "cancelled";
+
+export interface Teammate {
+  id: string;
+  role: string;
+  status: TeammateStatus;
+  scopePath?: string;
+}
+
+export interface TeamMessage {
+  id: string;
+  from: string;
+  to: string;
+  content: string;
+  timestamp: number;
+}
+
+export interface TeamState {
+  teammates: Teammate[];
+  messages: TeamMessage[];
 }
