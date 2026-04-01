@@ -1,0 +1,83 @@
+- Add total cost tracking for the session, and show it in the UI.
+- When sending the text to the session, the harness should create a todo list (like claude code) and we show this todo list in the UI. This way the user knows what will happen and can track progress.
+
+
+● Good overview. Here's where I think Summit could go from here. Let me organize by impact and effort:
+
+  ---
+  High Value, Moderate Effort
+
+  1. Commit & PR management from the UI
+  Right now Claude makes changes in a worktree, but there's no way for the user to commit, push, or create a PR from the
+  UI. This feels like the natural next step after the changed files panel.
+
+  ┌─────────────────────────────┐
+  │  Changed Files        [PR]  │
+  │  ─────────────────────────  │
+  │  + server.py      +13 -1   │
+  │  ~ config.yaml     +2 -0   │
+  │                             │
+  │  ┌─────────────────────┐   │
+  │  │ Commit message...   │   │
+  │  │                     │   │
+  │  └─────────────────────┘   │
+  │  [Commit] [Commit & Push]  │
+  │  [Create PR]               │
+  └─────────────────────────────┘
+
+  2. Model selector
+  You're locked into whatever the SDK defaults to. A dropdown to pick the model (Sonnet vs Opus, etc.) per session would
+  give control over cost vs capability.
+
+  3. System prompt / CLAUDE.md editor
+  Let users configure the system context per session — "you're working on the Python backend" or "only use TypeScript".
+  Could even let them edit a .claude/ config from the UI.
+
+  4. Session branching / merge back
+  You have worktrees, but no way to merge results back to main, cherry-pick, or compare branches. A "merge to main" or
+  "create PR" button would close the loop.
+
+  ---
+  High Value, Lower Effort
+
+  5. Keyboard shortcuts
+  Ctrl+N for new session, Ctrl+K for session switcher, Ctrl+Shift+C for changes panel, etc. Power users will want these.
+
+  6. Search across sessions
+  As sessions accumulate, finding that one conversation where you solved a specific problem becomes painful. Full-text
+  search across messages.
+
+  7. File tree browser
+  Show the worktree's file structure in the changed files panel (as a tab). Lets users browse what Claude has access to,
+  not just what changed.
+
+  8. Stop/cancel a running query
+  There's no abort button right now. If Claude goes on a tangent, you're stuck waiting.
+
+  ---
+  Medium Value, Higher Effort
+
+  9. Collaborative editing / live file preview
+  Show the file content as Claude edits it in real-time. Think a Monaco editor panel that updates as tool_use events come
+  in for Write/Edit operations.
+
+  10. Cost tracking dashboard
+  You already have cost_usd per message. Aggregate it — per session, per day, running total. Useful for teams managing
+  budgets.
+
+  11. MCP server management
+  Configure and toggle MCP servers from the UI instead of config files. Show which servers are connected, their tools,
+  health status.
+
+  12. Session templates / starter prompts
+  Pre-configured sessions: "Code Review" (with a system prompt focused on reviewing), "Bug Fix" (scoped to debugging),
+  "Refactor" (architectural focus). Quick starts.
+
+  ---
+  Nice-to-Have / Future
+
+  13. Multi-file diff view — side-by-side or tabbed diffs for all changes at once
+  14. Voice input — Web Speech API for hands-free prompting
+  15. Image/screenshot paste — Drag & drop images into the chat
+  16. Export conversation — Download as markdown, share a link
+  17. Undo last Claude action — Git revert of the last commit in the worktree

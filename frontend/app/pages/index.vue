@@ -10,6 +10,8 @@ import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
 import HighlightMatch from "~/components/HighlightMatch.vue";
 import ProjectSwitcher from "~/components/ProjectSwitcher.vue";
 import ProjectConfigDialog from "~/components/ProjectConfigDialog.vue";
+import TeamTabBar from "~/components/TeamTabBar.vue";
+import TeamStatusBar from "~/components/TeamStatusBar.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -48,7 +50,46 @@ const {
   selectPrevSession,
   selectNextSession,
   deleteSession,
+  team,
 } = useChat();
+
+// Derive effective session status accounting for teammate states
+function effectiveStatus(s: typeof sessions.value[0]): SessionStatus {
+  // Teammate needing input always takes priority — even if orchestrator is busy on check_mailbox
+  if (s.teammates.length > 0 && s.teammates.some((t) => t.askUser)) return "ask_user";
+  // If the orchestrator itself is busy, show its status
+  if (s.status !== "idle") return s.status;
+  // Check remaining teammate states
+  if (s.teammates.length > 0) {
+    if (s.teammates.some((t) => t.status === "working" || t.status === "waiting")) return "tool";
+  }
+  return s.status;
+}
+
+// Filtered messages: when a team tab is selected, show that teammate's messages
+const displayMessages = computed(() => {
+  if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
+    return messages.value;
+  }
+  const tab = team.activeTab.value;
+  return tab?.messages ?? [];
+});
+
+const displayEvents = computed(() => {
+  if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
+    return events.value;
+  }
+  const tab = team.activeTab.value;
+  return tab?.events ?? [];
+});
+
+const displayAskUser = computed(() => {
+  if (!team.teamActive.value || !team.activeTabId.value || team.activeTabId.value === "orchestrator") {
+    return askUser.value;
+  }
+  const tab = team.activeTab.value;
+  return tab?.askUser ?? null;
+});
 
 const projectStore = useProjectStore();
 const { projects, activeProject } = projectStore;
@@ -66,6 +107,7 @@ const cancelling = ref(false);
 const messagesEl = ref<HTMLElement>();
 const inputEl = ref<HTMLTextAreaElement>();
 const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
+const eventsExpanded = ref(false);
 const sidebarOpen = ref(true);
 const changesOpen = ref(false);
 const projectDialogOpen = ref(false);
@@ -135,7 +177,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 watch(
-  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length, () => elicitation.value, () => askUser.value],
+  [() => displayMessages.value.length, () => displayMessages.value.at(-1)?.content, () => displayEvents.value.length, () => elicitation.value, () => askUser.value],
   () => {
     nextTick(() => {
       messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: "smooth" });
@@ -209,7 +251,8 @@ const attentionProjectIds = computed(() => {
   const ids = new Set<string>();
   for (const s of sessions.value) {
     console.log(`Session ${s.id} status:`, s.status);
-    if ((s.status === "ask_user" || s.status === "elicitation") && s.projectId) {
+    const es = effectiveStatus(s);
+    if ((es === "ask_user" || es === "elicitation") && s.projectId) {
       ids.add(s.projectId);
     }
   }
@@ -325,14 +368,14 @@ onMounted(() => {
         >
           <span class="relative flex h-4 w-4 shrink-0 items-center justify-center">
             <span
-              v-if="statusConfig[s.status].pulse"
+              v-if="statusConfig[effectiveStatus(s)].pulse"
               class="absolute h-2.5 w-2.5 animate-ping rounded-full opacity-50"
-              :class="statusConfig[s.status].color"
+              :class="statusConfig[effectiveStatus(s)].color"
             />
             <span
               class="relative h-2 w-2 rounded-full"
-              :class="statusConfig[s.status].color"
-              :title="statusConfig[s.status].label"
+              :class="statusConfig[effectiveStatus(s)].color"
+              :title="statusConfig[effectiveStatus(s)].label"
             />
           </span>
           <span class="flex-1 truncate">
@@ -340,15 +383,15 @@ onMounted(() => {
               <HighlightMatch :text="s.title" :query="searchQuery" />
             </span>
             <span
-              v-if="s.status !== 'idle'"
+              v-if="effectiveStatus(s) !== 'idle'"
               class="block truncate text-[10px] leading-tight"
               :class="{
-                'text-red-400': s.status === 'error',
-                'text-cyan-400': s.status === 'ask_user',
-                'text-amber-400': s.status === 'elicitation',
-                'text-muted-foreground': s.status !== 'error' && s.status !== 'ask_user' && s.status !== 'elicitation',
+                'text-red-400': effectiveStatus(s) === 'error',
+                'text-cyan-400': effectiveStatus(s) === 'ask_user',
+                'text-amber-400': effectiveStatus(s) === 'elicitation',
+                'text-muted-foreground': effectiveStatus(s) !== 'error' && effectiveStatus(s) !== 'ask_user' && effectiveStatus(s) !== 'elicitation',
               }"
-            >{{ statusConfig[s.status].label }}</span>
+            >{{ statusConfig[effectiveStatus(s)].label }}</span>
             <span
               v-if="fullTextEnabled && searchQuery && fullTextResults.find((r) => r.sessionId === s.id) && !s.title.toLowerCase().includes(searchQuery.toLowerCase())"
               class="block truncate text-[10px] leading-tight text-muted-foreground italic"
@@ -467,42 +510,75 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Team tab bar -->
+      <TeamTabBar
+        v-if="!showProjectDetails && team.teamActive.value"
+        :teammates="team.teammates.value"
+        :active-tab-id="team.activeTabId.value"
+        @select="team.selectTab"
+      />
+      <TeamStatusBar
+        v-if="!showProjectDetails && team.teamActive.value"
+        :teammates="team.teammates.value"
+      />
+
       <!-- Messages -->
-      <div v-else ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
+      <div v-if="!showProjectDetails" ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
         <div class="mx-auto flex max-w-3xl flex-col gap-4">
           <div
-            v-if="messages.length === 0 && !loading"
+            v-if="displayMessages.length === 0 && !loading"
             class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
           >
             {{ loaded ? 'Send a message to start a new chat' : 'Loading…' }}
           </div>
 
-          <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
+          <ChatMessage v-for="msg in displayMessages" :key="msg.id" :message="msg" />
 
           <!-- Tool events -->
-          <div v-if="events.length" class="flex justify-start">
-            <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
-              <div
-                v-for="ev in events"
-                :key="ev.id"
-                class="flex items-center gap-2 text-xs"
-                :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
-              >
-                <span v-if="ev.type === 'thinking'" class="thinking-dots">
-                  <span>.</span><span>.</span><span>.</span>
-                </span>
-                <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
-                <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
-                <span v-else class="text-green-400">&#10003;</span>
-                <span class="truncate">{{ ev.label }}</span>
-              </div>
+          <div v-if="displayEvents.length" class="flex justify-start">
+            <div
+              class="max-w-[80%] rounded-lg rounded-bl-sm border border-border bg-card px-3 py-2 cursor-pointer select-none"
+              :class="eventsExpanded ? 'max-h-48 overflow-y-auto' : ''"
+              @click="eventsExpanded = !eventsExpanded"
+            >
+              <template v-if="eventsExpanded">
+                <div
+                  v-for="ev in displayEvents"
+                  :key="ev.id"
+                  class="flex items-center gap-1.5 text-[11px] leading-tight"
+                  :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
+                >
+                  <span v-if="ev.type === 'thinking'" class="thinking-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                  <span v-else-if="ev.type === 'tool_use' && !ev.done" class="text-primary">&#9654;</span>
+                  <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
+                  <span v-else class="text-green-400">&#10003;</span>
+                  <span class="truncate">{{ ev.label }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div
+                  class="flex items-center gap-1.5 text-[11px] leading-tight"
+                  :class="displayEvents.at(-1)?.isError ? 'text-red-400' : 'text-muted-foreground'"
+                >
+                  <span v-if="displayEvents.at(-1)?.type === 'thinking'" class="thinking-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                  <span v-else-if="displayEvents.at(-1)?.type === 'tool_use' && !displayEvents.at(-1)?.done" class="text-primary">&#9654;</span>
+                  <span v-else-if="displayEvents.at(-1)?.isError" class="text-red-400">&#10007;</span>
+                  <span v-else class="text-green-400">&#10003;</span>
+                  <span class="truncate">{{ displayEvents.at(-1)?.label }}</span>
+                  <span v-if="displayEvents.length > 1" class="text-[10px] text-muted-foreground/50 ml-1">+{{ displayEvents.length - 1 }}</span>
+                </div>
+              </template>
             </div>
           </div>
 
           <!-- AskUserQuestion -->
-          <div v-if="askUser" class="flex justify-start">
+          <div v-if="displayAskUser" class="flex justify-start">
             <AskUserQuestions
-              :questions="askUser"
+              :questions="displayAskUser"
               @answer="(answers) => respondAskUser(answers)"
             />
           </div>
@@ -515,7 +591,7 @@ onMounted(() => {
             />
           </div>
 
-          <div v-if="loading && !events.length && !elicitation && !askUser" class="flex justify-start">
+          <div v-if="loading && !displayEvents.length && !elicitation && !displayAskUser" class="flex justify-start">
             <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
               <span class="thinking-dots text-muted-foreground">
                 <span>.</span><span>.</span><span>.</span>

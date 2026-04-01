@@ -1,5 +1,9 @@
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
+
+  // Cancel any active query and dispose the team manager
+  disposeSession(id);
+
   const session = await getStoredSession(id);
 
   if (session?.worktrees && Object.keys(session.worktrees).length > 0) {

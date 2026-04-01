@@ -1,5 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { AppEvent } from "~~/shared/types";
+import { TeamManager } from "./teamManager";
+import { createOrchestratorMcpServer } from "./teamTools";
 
 export interface StreamEvent {
   id: number;
@@ -24,12 +26,13 @@ const active = new Map<string, ActiveQuery>();
 const abortControllers = new Map<string, AbortController>();
 const pendingElicitations = new Map<string, PendingElicitation>();
 const pendingAskUser = new Map<string, PendingAskUser>();
+const teamManagers = new Map<string, TeamManager>();
 
-export function resolveAskUser(sessionId: string, answer: Record<string, string>) {
-  const pending = pendingAskUser.get(sessionId);
+export function resolveAskUser(askId: string, answer: Record<string, string>) {
+  const pending = pendingAskUser.get(askId);
   if (!pending) return false;
   pending.resolve(answer);
-  pendingAskUser.delete(sessionId);
+  pendingAskUser.delete(askId);
   return true;
 }
 
@@ -84,10 +87,13 @@ export function subscribe(
 
 export async function startQuery(sessionId: string, text: string) {
   const existing = active.get(sessionId);
-  if (existing && !existing.done) return;
+  // Block only if an orchestrator query is actively running (has an abort controller)
+  if (existing && !existing.done && abortControllers.has(sessionId)) return;
 
-  // Set placeholder synchronously to prevent race conditions
-  const aq: ActiveQuery = { events: [], done: false, listeners: new Set() };
+  // Reuse the existing ActiveQuery if it's alive for teammates, otherwise create new
+  const aq: ActiveQuery = (existing && !existing.done)
+    ? existing
+    : { events: [], done: false, listeners: new Set() };
   active.set(sessionId, aq);
 
   const session = await getStoredSession(sessionId);
@@ -103,10 +109,30 @@ export async function startQuery(sessionId: string, text: string) {
 }
 
 export function cancelQuery(sessionId: string): boolean {
+  // Cancel all teammates first if a team is active
+  const tm = teamManagers.get(sessionId);
+  if (tm) {
+    tm.cancelAll();
+  }
   const controller = abortControllers.get(sessionId);
   if (!controller) return false;
   controller.abort();
   return true;
+}
+
+export function getTeamState(sessionId: string) {
+  const tm = teamManagers.get(sessionId);
+  if (!tm || tm.getTeammates().length === 0) return null;
+  return { teammates: tm.getTeammates(), messages: [] };
+}
+
+export function disposeSession(sessionId: string): void {
+  cancelQuery(sessionId);
+  const tm = teamManagers.get(sessionId);
+  if (tm) {
+    tm.dispose();
+    teamManagers.delete(sessionId);
+  }
 }
 
 function finalize(sessionId: string) {
@@ -117,7 +143,9 @@ function finalize(sessionId: string) {
     setTimeout(() => active.delete(sessionId), 60_000);
   }
   abortControllers.delete(sessionId);
-  pendingAskUser.delete(sessionId);
+  // pendingAskUser entries are keyed by unique askId now, not sessionId — no blanket delete needed
+  // Team manager persists across queries — disposed only on session delete
+  // or when the user explicitly tells the orchestrator to end the team
 }
 
 function getSessionCwd(session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>): string {
@@ -149,6 +177,114 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
   try {
     const resolvedCwd = getSessionCwd(session);
     console.log(`[summit] Query cwd for session ${sessionId}: ${resolvedCwd} (worktrees: ${JSON.stringify(session.worktrees)}, worktreePath: ${session.worktreePath})`);
+
+    // Shared tool handlers (used by both orchestrator and teammates)
+    // extraEmitFields allows teammates to attach their identity to emitted events
+    const canUseToolHandler = async (toolName: string, input: any, extraEmitFields?: Record<string, unknown>) => {
+      if (toolName === "AskUserQuestion") {
+        const askId = crypto.randomUUID();
+        emit(sessionId, { type: "ask_user", askId, questions: input.questions, ...extraEmitFields });
+        const answers = await new Promise<Record<string, string>>((resolve) => {
+          pendingAskUser.set(askId, { resolve });
+        });
+        return { behavior: "allow" as const, updatedInput: { ...input, answers } };
+      }
+      return { behavior: "allow" as const };
+    };
+
+    const onElicitationHandler = async (request: any, extraEmitFields?: Record<string, unknown>) => {
+      const elicitationId = crypto.randomUUID();
+      emit(sessionId, {
+        type: "elicitation",
+        elicitationId,
+        serverName: request.serverName,
+        message: request.message,
+        schema: request.requestedSchema,
+        ...extraEmitFields,
+      });
+      return new Promise<any>((resolve) => {
+        pendingElicitations.set(elicitationId, { resolve });
+      });
+    };
+
+    // Reuse existing team manager if one persists from a prior turn, otherwise create new
+    let teamManager = teamManagers.get(sessionId);
+    if (teamManager) {
+      teamManager.updateHandlers(emit, canUseToolHandler, onElicitationHandler);
+    } else {
+      teamManager = new TeamManager(sessionId, session, emit, canUseToolHandler, onElicitationHandler);
+      teamManagers.set(sessionId, teamManager);
+    }
+    const orchestratorMcpServer = createOrchestratorMcpServer(teamManager);
+
+    const repoList = Object.entries(session.worktrees).map(([repo, path]) => `- ${repo}: ${path}`).join("\n");
+
+    const orchestratorPromptAppend = `IMPORTANT: Your working directory is current working directory.
+Always create and edit files within this directory.
+Never write files to the user's home directory or any path outside the working directory unless the user explicitly asks you to.
+
+You have access to the following repos:
+${repoList}
+
+IMPORTANT: If you are unsure about what to do, ask the user for clarification instead of making assumptions. Always ask before performing any action that could modify files or have side effects.
+
+IMPORTANT: If you have a multiple choices question, use the AskUserQuestion tool to ask the user.
+
+## Agent Teams
+
+You have orchestrator tools available to create a team of specialized agents when the task benefits from parallel work or collaborative discussion.
+
+**When to create a team:**
+- The task involves changes across multiple repos or distinct areas of a monorepo
+- Parallel work by specialists would be more efficient than doing it all yourself
+- The user wants a group discussion, debate, brainstorm, or collaborative exploration of a topic
+- There are clear domain boundaries or distinct perspectives to represent
+
+**When NOT to create a team (just do it yourself):**
+- Simple single-file changes
+- Tasks contained within one domain
+- Quick fixes, refactors, or questions
+
+**How to create a team:**
+1. Analyze the request and decide what roles are needed
+2. Use create_teammate for each role with a detailed system prompt
+3. After creating ALL teammates, use broadcast to send the full team roster and initial instructions
+4. Tell the user the team is ready
+5. **Stay in a loop** — call check_mailbox repeatedly to receive messages from teammates. Process each message (relay info, respond, coordinate) and then call check_mailbox again. Do NOT finish your turn while teammates are still active.
+
+**Communication tools — important distinction:**
+- send_message: send a message to a specific teammate
+- check_mailbox: block until a teammate sends YOU a message back — use this after every action that might trigger a teammate reply. Always loop on this.
+- wait_for_next_completion: block until a teammate calls notify_done (fully finished). Use this only when you're waiting for teammates to finish all their work.
+- check_team_status: non-blocking poll of all teammate statuses
+- Teammates can also use AskUserQuestion to talk to the user directly — they don't always need to go through you
+
+**IMPORTANT — staying alive as orchestrator:**
+- After creating and broadcasting to a team, you MUST loop on check_mailbox to stay available for teammate messages
+- Teammates will send you progress updates, results, and questions — if you finish your turn, they get stuck waiting for replies
+- Only finish your turn when all teammates have called notify_done (you'll know from wait_for_next_completion or check_team_status)
+
+**Team lifecycle:**
+- The team persists across messages — do NOT recreate teammates each turn
+- Both you and the teammates loop on check_mailbox — everyone stays alive until work is complete
+- When work is done, present the results to the user and KEEP the team alive — do NOT call dismiss_team
+- The user may want to ask follow-up questions, continue the discussion, or give new tasks to the team
+- ONLY call dismiss_team when the user explicitly asks to end/dismiss/disband the team
+
+**Teammate scoping (for code tasks):**
+- Multi-repo projects: Scope each teammate to their repo path
+- Monorepo projects: Scope each teammate to their subdirectory
+
+**Available repos for scoping:**
+${repoList}
+`;
+
+    // Inject current team state if a team already exists
+    const existingTeammates = teamManager.getTeammates();
+    const teamStateAppend = existingTeammates.length > 0
+      ? `\n\n## Current Team State\nYou already have an active team. Do NOT recreate teammates that already exist.\n${existingTeammates.map((t) => `- ${t.role} (ID: ${t.id}) — status: ${t.status}`).join("\n")}\n\nUse send_message to talk to them, check_mailbox to receive their replies.`
+      : "";
+
     const q = query({
       prompt: text,
       options: {
@@ -159,48 +295,19 @@ async function runQuery(session: NonNullable<Awaited<ReturnType<typeof getStored
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: `IMPORTANT: Your working directory is current working directory.
-Always create and edit files within this directory.
-Never write files to the user's home directory or any path outside the working directory unless the user explicitly asks you to.
-
-You have access to the following repos:
-${Object.entries(session.worktrees).map(([repo, path]) => `- ${repo}: ${path}`).join("\n")}
-
-IMPORTANT: If you are unsure about what to do, ask the user for clarification instead of making assumptions. Always ask before performing any action that could modify files or have side effects.
-
-IMPORTANT: If you have a multiple choices question, use the AskUserQuestion tool to ask the user.
-`,
+          append: orchestratorPromptAppend + teamStateAppend,
         },
         cwd: resolvedCwd,
         ...(getSessionAdditionalDirs(session).length > 0
           ? { additionalDirectories: getSessionAdditionalDirs(session) }
           : {}),
         toolConfig: { askUserQuestion: { previewFormat: "html" } },
+        mcpServers: { orchestrator: orchestratorMcpServer },
+        allowedTools: ["mcp__orchestrator__*"],
         ...(session.agentSessionId ? { resume: session.agentSessionId } : {}),
         ...(session.model ? { model: session.model } : {}),
-        canUseTool: async (toolName, input) => {
-          if (toolName === "AskUserQuestion") {
-            emit(sessionId, { type: "ask_user", questions: input.questions });
-            const answers = await new Promise<Record<string, string>>((resolve) => {
-              pendingAskUser.set(sessionId, { resolve });
-            });
-            return { behavior: "allow" as const, updatedInput: { ...input, answers } };
-          }
-          return { behavior: "allow" as const };
-        },
-        onElicitation: async (request) => {
-          const elicitationId = crypto.randomUUID();
-          emit(sessionId, {
-            type: "elicitation",
-            elicitationId,
-            serverName: request.serverName,
-            message: request.message,
-            schema: request.requestedSchema,
-          });
-          return new Promise((resolve) => {
-            pendingElicitations.set(elicitationId, { resolve });
-          });
-        },
+        canUseTool: canUseToolHandler,
+        onElicitation: onElicitationHandler,
       },
     });
 
@@ -228,6 +335,15 @@ IMPORTANT: If you have a multiple choices question, use the AskUserQuestion tool
     }
   }
 
+  // Persist team state if a team was used
+  const tm = teamManagers.get(sessionId);
+  if (tm && tm.getTeammates().length > 0) {
+    session.teamState = {
+      teammates: tm.getTeammates(),
+      messages: [],
+    };
+  }
+
   // Persist
   session.messages.push({ id: String(Date.now() - 1), role: "user", content: text });
   if (state.assistantText) {
@@ -245,6 +361,20 @@ IMPORTANT: If you have a multiple choices question, use the AskUserQuestion tool
   }
 
   await saveSession(session);
-  emit(sessionId, { type: "done" });
-  finalize(sessionId);
+
+  // If teammates are still active, keep the stream open — emit turn_done instead of done
+  const activeTm = teamManagers.get(sessionId);
+  if (activeTm && activeTm.activeTeammateCount > 0) {
+    emit(sessionId, { type: "turn_done" });
+    // Clean up orchestrator resources but keep ActiveQuery alive for teammate events
+    abortControllers.delete(sessionId);
+    // When all teammates eventually finish, emit done and finalize
+    activeTm.onAllTeammateDone(() => {
+      emit(sessionId, { type: "done" });
+      finalize(sessionId);
+    });
+  } else {
+    emit(sessionId, { type: "done" });
+    finalize(sessionId);
+  }
 }

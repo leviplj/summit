@@ -1,5 +1,18 @@
 import type { ChatMessage, SessionStatus, SessionListItem, ElicitationPayload, AskUserQuestion } from "~~/shared/types";
 
+export interface TeammateTab {
+  id: string;
+  role: string;
+  status: string;
+  events: ToolEvent[];
+  messages: Array<{ id: string; role: "assistant" | "error"; content: string }>;
+  streamText: string;
+  askUser: any[] | null;
+  askId?: string;
+  costUsd: number;
+  outputTokens: number;
+}
+
 export interface ClientSession {
   id: string;
   title: string;
@@ -13,6 +26,10 @@ export interface ClientSession {
   status: SessionStatus;
   elicitation: ElicitationPayload | null;
   askUser: AskUserQuestion[] | null;
+  askId?: string;
+  teammates: TeammateTab[];
+  activeTabId: string | null;
+  teamActive: boolean;
 }
 
 export interface ToolEvent {
@@ -20,6 +37,8 @@ export interface ToolEvent {
   type: "thinking" | "tool_use" | "tool_result";
   label: string;
   isError?: boolean;
+  done?: boolean;
+  toolUseId?: string;
 }
 
 let _id = 0;
@@ -55,7 +74,7 @@ export function useSessionStore() {
   const elicitation = computed(() => activeSession.value?.elicitation ?? null);
   const askUser = computed(() => activeSession.value?.askUser ?? null);
 
-  async function loadSessions(): Promise<{ session: ClientSession; hasActiveQuery: boolean }[]> {
+  async function loadSessions(): Promise<{ session: ClientSession; hasActiveQuery: boolean; teamState?: any }[]> {
     try {
       const data = await $fetch<SessionListItem[]>("/api/sessions");
       if (data.length) {
@@ -72,6 +91,9 @@ export function useSessionStore() {
           status: "idle" as SessionStatus,
           elicitation: null,
           askUser: null,
+          teammates: [],
+          activeTabId: null,
+          teamActive: false,
         }));
         activeSessionId.value = sessions.value[0].id;
         loaded.value = true;
@@ -79,6 +101,7 @@ export function useSessionStore() {
         return sessions.value.map((cs, i) => ({
           session: cs,
           hasActiveQuery: data[i].hasActiveQuery,
+          teamState: data[i].teamState,
         }));
       }
     } catch {}
@@ -102,6 +125,9 @@ export function useSessionStore() {
       status: "idle",
       elicitation: null,
       askUser: null,
+      teammates: [],
+      activeTabId: null,
+      teamActive: false,
     };
     sessions.value.unshift(session);
     activeSessionId.value = id;

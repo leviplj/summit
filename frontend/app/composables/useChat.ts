@@ -3,34 +3,21 @@ import type { ClientSession } from "./useSessionStore";
 
 export type { SessionStatus } from "~~/shared/types";
 
-const TOOL_LABELS: Record<string, (input: Record<string, any>) => string> = {
-  Read: (i) => `Reading ${i.file_path || "file"}`,
-  Write: (i) => `Writing ${i.file_path || "file"}`,
-  Edit: (i) => `Editing ${i.file_path || "file"}`,
-  Bash: (i) => `$ ${i.command || "command"}`,
-  Glob: (i) => `Searching files: ${i.pattern || ""}`,
-  Grep: (i) => `Searching for: ${i.pattern || ""}`,
-  WebFetch: (i) => `Fetching ${i.url || "URL"}`,
-  WebSearch: (i) => `Searching: ${i.query || ""}`,
-};
-
-function formatToolUse(tool: string, input?: Record<string, any>): string {
-  if (!input) return `Using ${tool}`;
-  const fn = TOOL_LABELS[tool];
-  if (fn) return fn(input);
-  const s = input.file_path || input.command || input.pattern || input.query || "";
-  return s ? `${tool}: ${s}` : `Using ${tool}`;
-}
 
 export function useChat() {
   const store = useSessionStore();
   const { connect } = useStream();
   const model = ref("");
+  const team = useTeamStore(() => store.activeSession.value);
 
   // Per-session streaming state (ephemeral, not persisted)
   const streamState = new Map<string, { msgId: string; text: string }>();
 
   function handleEvent(session: ClientSession, event: AppEvent) {
+    // Route team-specific events to team store
+    if (team.handleTeamEvent(event)) return;
+    if (team.routeTeammateEvent(event)) return;
+
     const state = streamState.get(session.id);
 
     switch (event.type) {
@@ -51,18 +38,30 @@ export function useChat() {
             id: uid(),
             type: "tool_use",
             label: formatToolUse(event.tool as string, event.input as Record<string, any>),
+            toolUseId: event.toolUseId as string | undefined,
           });
         }
         break;
 
-      case "tool_result":
-        session.events.push({
-          id: uid(),
-          type: "tool_result",
-          label: (event.content as string) || (event.is_error ? "Error" : "Done"),
-          isError: event.is_error as boolean,
-        });
+      case "tool_result": {
+        const toolUseId = event.toolUseId as string | undefined;
+        const match = toolUseId ? session.events.find((e) => e.toolUseId === toolUseId && e.type === "tool_use") : null;
+        if (match) {
+          match.done = true;
+          match.isError = event.is_error as boolean;
+        }
+        // Only show separate line for errors or meaningful content
+        const content = event.content as string;
+        if (event.is_error || (content && content !== "Done" && !match)) {
+          session.events.push({
+            id: uid(),
+            type: "tool_result",
+            label: content || "Error",
+            isError: event.is_error as boolean,
+          });
+        }
         break;
+      }
 
       case "text":
         if (!state) break;
@@ -97,11 +96,24 @@ export function useChat() {
         session.events = [];
         break;
 
+      case "turn_done":
+        // Orchestrator finished but teammates still active — keep stream open
+        session.loading = false;
+        session.status = "idle";
+        session.events = [];
+        session.askUser = null;
+        session.askId = undefined;
+        session.elicitation = null;
+        // DON'T delete streamState or disconnect — teammate events still flowing
+        store.reloadSession(session.id);
+        break;
+
       case "done":
         session.loading = false;
         session.status = "idle";
         session.events = [];
         session.askUser = null;
+        session.askId = undefined;
         session.elicitation = null;
         streamState.delete(session.id);
         store.reloadSession(session.id);
@@ -111,6 +123,7 @@ export function useChat() {
         session.status = "ask_user";
         session.events = session.events.filter((e) => e.type !== "thinking");
         session.askUser = (event.questions as any[]) || [];
+        session.askId = event.askId as string | undefined;
         break;
 
       case "elicitation":
@@ -169,15 +182,29 @@ export function useChat() {
 
   async function respondAskUser(answers: Record<string, string>) {
     const session = store.activeSession.value;
-    if (!session?.askUser) return;
+    if (!session) return;
 
-    session.askUser = null;
-    session.status = "waiting";
+    // Determine askId — from teammate tab or orchestrator session
+    let askId: string | undefined;
+    const activeTab = team.activeTab.value;
+    if (activeTab?.askUser) {
+      askId = activeTab.askId;
+      activeTab.askUser = null;
+      activeTab.askId = undefined;
+      // Teammate question — don't change session status, the orchestrator may not be running
+    } else if (session.askUser) {
+      askId = session.askId;
+      session.askUser = null;
+      session.askId = undefined;
+      session.status = "waiting";
+    } else {
+      return;
+    }
 
     try {
       await $fetch(`/api/sessions/${session.id}/ask-user`, {
         method: "POST",
-        body: { answers },
+        body: { askId, answers },
       });
     } catch (err: any) {
       session.messages.push({ id: uid(), role: "error", content: err.message });
@@ -246,13 +273,41 @@ export function useChat() {
       return;
     }
 
-    startStreaming(session);
+    // Only start a new stream if we don't already have one (teammates may keep it alive)
+    if (!streamState.has(session.id)) {
+      startStreaming(session);
+    } else {
+      // Stream is already connected — just reset the text accumulator for the new turn
+      streamState.set(session.id, { msgId: uid(), text: "" });
+    }
   }
 
   onMounted(async () => {
     const sessionsWithStatus = await store.loadSessions();
-    // Only reconnect sessions that actually have active server-side queries
-    for (const { session, hasActiveQuery } of sessionsWithStatus) {
+    for (const { session, hasActiveQuery, teamState } of sessionsWithStatus) {
+      // Restore team state from server onto the session object
+      if (teamState && teamState.teammates.length > 0) {
+        session.teamActive = true;
+        for (const t of teamState.teammates) {
+          if (!session.teammates.find((tab) => tab.id === t.id)) {
+            session.teammates.push({
+              id: t.id,
+              role: t.role,
+              status: t.status,
+              events: [],
+              messages: [],
+              streamText: "",
+              askUser: null,
+              costUsd: 0,
+              outputTokens: 0,
+            });
+          }
+        }
+        if (!session.activeTabId) {
+          session.activeTabId = "orchestrator";
+        }
+      }
+      // Reconnect sessions that have active server-side queries
       if (hasActiveQuery) {
         session.loading = true;
         session.status = "waiting";
@@ -262,14 +317,19 @@ export function useChat() {
   });
 
   const sessionCost = computed(() => {
-    const msgs = store.activeSession.value?.messages;
-    if (!msgs) return null;
+    const session = store.activeSession.value;
+    if (!session) return null;
     let totalCost = 0;
     let totalTokens = 0;
     let hasCost = false;
-    for (const m of msgs) {
+    for (const m of session.messages) {
       if (m.meta?.cost_usd) { totalCost += m.meta.cost_usd; hasCost = true; }
       if (m.meta?.output_tokens) { totalTokens += m.meta.output_tokens; }
+    }
+    // Include teammate costs
+    for (const t of session.teammates) {
+      if (t.costUsd) { totalCost += t.costUsd; hasCost = true; }
+      if (t.outputTokens) { totalTokens += t.outputTokens; }
     }
     return hasCost ? { totalCost, totalTokens } : null;
   });
@@ -278,6 +338,7 @@ export function useChat() {
     ...store,
     model,
     sessionCost,
+    team,
     send,
     cancel,
     respondAskUser,

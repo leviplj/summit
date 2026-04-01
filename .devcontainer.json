@@ -10,7 +10,10 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
   "image": "ghcr.io/cachix/devenv/devcontainer:v1.11.2",
-  "overrideCommand": false
+  "overrideCommand": false,
+	"mounts": [
+		"type=bind,source=/home/${localEnv:USER}/.ssh,target=/home/vscode/.ssh,readonly"
+	]
 //   "remoteUser": "root"
   // "updateContentCommand": "devenv test"
 }

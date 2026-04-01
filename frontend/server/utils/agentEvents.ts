@@ -3,6 +3,7 @@ import type { AppEvent } from "~~/shared/types";
 export interface AgentStreamState {
   currentToolName: string | null;
   currentToolInput: string;
+  currentToolUseId: string | null;
   assistantText: string;
   assistantMeta: { duration_ms?: number; cost_usd?: number; output_tokens?: number } | null;
 }
@@ -11,6 +12,7 @@ export function createStreamState(): AgentStreamState {
   return {
     currentToolName: null,
     currentToolInput: "",
+    currentToolUseId: null,
     assistantText: "",
     assistantMeta: null,
   };
@@ -47,6 +49,7 @@ export function translateMessage(message: any, state: AgentStreamState): AppEven
         } else if (cb?.type === "tool_use") {
           state.currentToolName = cb.name;
           state.currentToolInput = "";
+          state.currentToolUseId = cb.id ?? null;
         }
       } else if (se.type === "content_block_delta") {
         const delta = se.delta;
@@ -60,9 +63,10 @@ export function translateMessage(message: any, state: AgentStreamState): AppEven
         if (state.currentToolName) {
           let input: Record<string, any> = {};
           try { input = JSON.parse(state.currentToolInput); } catch {}
-          events.push({ type: "tool_use", tool: state.currentToolName, input });
+          events.push({ type: "tool_use", tool: state.currentToolName, input, toolUseId: state.currentToolUseId });
           state.currentToolName = null;
           state.currentToolInput = "";
+          state.currentToolUseId = null;
         }
       }
       break;
@@ -88,6 +92,7 @@ export function translateMessage(message: any, state: AgentStreamState): AppEven
         const text = toolResult.stdout || toolResult.content || toolResult.error || "";
         events.push({
           type: "tool_result",
+          toolUseId: toolResult.tool_use_id,
           is_error: !!toolResult.is_error,
           content: String(text).slice(0, 300),
         });
@@ -98,6 +103,7 @@ export function translateMessage(message: any, state: AgentStreamState): AppEven
           if (block.type === "tool_result") {
             events.push({
               type: "tool_result",
+              toolUseId: block.tool_use_id,
               is_error: block.is_error || false,
               content: typeof block.content === "string" ? block.content.slice(0, 300) : "",
             });
