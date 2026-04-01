@@ -38,18 +38,30 @@ export function useChat() {
             id: uid(),
             type: "tool_use",
             label: formatToolUse(event.tool as string, event.input as Record<string, any>),
+            toolUseId: event.toolUseId as string | undefined,
           });
         }
         break;
 
-      case "tool_result":
-        session.events.push({
-          id: uid(),
-          type: "tool_result",
-          label: (event.content as string) || (event.is_error ? "Error" : "Done"),
-          isError: event.is_error as boolean,
-        });
+      case "tool_result": {
+        const toolUseId = event.toolUseId as string | undefined;
+        const match = toolUseId ? session.events.find((e) => e.toolUseId === toolUseId && e.type === "tool_use") : null;
+        if (match) {
+          match.done = true;
+          match.isError = event.is_error as boolean;
+        }
+        // Only show separate line for errors or meaningful content
+        const content = event.content as string;
+        if (event.is_error || (content && content !== "Done" && !match)) {
+          session.events.push({
+            id: uid(),
+            type: "tool_result",
+            label: content || "Error",
+            isError: event.is_error as boolean,
+          });
+        }
         break;
+      }
 
       case "text":
         if (!state) break;

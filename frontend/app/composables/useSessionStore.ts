@@ -37,6 +37,8 @@ export interface ToolEvent {
   type: "thinking" | "tool_use" | "tool_result";
   label: string;
   isError?: boolean;
+  done?: boolean;
+  toolUseId?: string;
 }
 
 let _id = 0;

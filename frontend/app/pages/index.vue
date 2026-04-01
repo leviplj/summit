@@ -551,7 +551,7 @@ onMounted(() => {
                   <span v-if="ev.type === 'thinking'" class="thinking-dots">
                     <span>.</span><span>.</span><span>.</span>
                   </span>
-                  <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
+                  <span v-else-if="ev.type === 'tool_use' && !ev.done" class="text-primary">&#9654;</span>
                   <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
                   <span v-else class="text-green-400">&#10003;</span>
                   <span class="truncate">{{ ev.label }}</span>
@@ -565,7 +565,7 @@ onMounted(() => {
                   <span v-if="displayEvents.at(-1)?.type === 'thinking'" class="thinking-dots">
                     <span>.</span><span>.</span><span>.</span>
                   </span>
-                  <span v-else-if="displayEvents.at(-1)?.type === 'tool_use'" class="text-primary">&#9654;</span>
+                  <span v-else-if="displayEvents.at(-1)?.type === 'tool_use' && !displayEvents.at(-1)?.done" class="text-primary">&#9654;</span>
                   <span v-else-if="displayEvents.at(-1)?.isError" class="text-red-400">&#10007;</span>
                   <span v-else class="text-green-400">&#10003;</span>
                   <span class="truncate">{{ displayEvents.at(-1)?.label }}</span>
