@@ -267,7 +267,9 @@ You have orchestrator tools available to create a team of specialized agents whe
 **Team lifecycle:**
 - The team persists across messages — do NOT recreate teammates each turn
 - Both you and the teammates loop on check_mailbox — everyone stays alive until work is complete
-- Use dismiss_team only when the user explicitly asks to end the team or the project is complete
+- When work is done, present the results to the user and KEEP the team alive — do NOT call dismiss_team
+- The user may want to ask follow-up questions, continue the discussion, or give new tasks to the team
+- ONLY call dismiss_team when the user explicitly asks to end/dismiss/disband the team
 
 **Teammate scoping (for code tasks):**
 - Multi-repo projects: Scope each teammate to their repo path

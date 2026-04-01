@@ -66,7 +66,7 @@ export class MessageBus {
    * message is queued. Otherwise blocks until one arrives.
    * Throws if blocking would create a circular dependency.
    */
-  async receive(teammateId: string, from?: string): Promise<TeamMessage> {
+  async receive(teammateId: string, from?: string, timeoutMs = 30_000): Promise<TeamMessage> {
     if (this.disposed) {
       throw new Error("Message bus has been disposed");
     }
@@ -101,13 +101,32 @@ export class MessageBus {
       this.waitsFor.set(teammateId, deps);
     }
 
-    // Block until a message arrives
+    // Block until a message arrives, with timeout to prevent deadlocks
     return new Promise<TeamMessage>((resolve, reject) => {
       if (this.disposed) {
         reject(new Error("Message bus has been disposed"));
         return;
       }
-      this.waiters.set(teammateId, { resolve, from });
+
+      const timer = setTimeout(() => {
+        this.waiters.delete(teammateId);
+        if (from) {
+          const deps = this.waitsFor.get(teammateId);
+          if (deps) {
+            deps.delete(from);
+            if (deps.size === 0) this.waitsFor.delete(teammateId);
+          }
+        }
+        reject(new Error("No messages received within timeout. Consider sending a message or checking team status instead of waiting."));
+      }, timeoutMs);
+
+      this.waiters.set(teammateId, {
+        resolve: (msg) => {
+          clearTimeout(timer);
+          resolve(msg);
+        },
+        from,
+      });
     });
   }
 

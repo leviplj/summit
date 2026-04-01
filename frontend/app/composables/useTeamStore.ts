@@ -59,7 +59,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
             : (event.fromName as string);
           const prefix = direction === "sent" ? `→ ${otherName}` : `← ${otherName}`;
           tab.messages.push({
-            id: String(Date.now()) + Math.random(),
+            id: uid() + Math.random(),
             role: "assistant",
             content: `**${prefix}:** ${event.content as string}`,
           });
@@ -72,7 +72,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
         if (tab) {
           tab.status = "done";
           tab.messages.push({
-            id: String(Date.now()),
+            id: uid(),
             role: "assistant",
             content: `**Done:** ${event.summary as string}`,
           });
@@ -95,7 +95,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
     switch (event.type) {
       case "thinking":
         tab.status = "working";
-        tab.events.push({ id: String(Date.now()), type: "thinking", label: "Thinking" });
+        tab.events.push({ id: uid(), type: "thinking", label: "Thinking" });
         break;
 
       case "tool_use": {
@@ -107,7 +107,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
         }
         tab.events = tab.events.filter((e) => e.type !== "thinking");
         tab.events.push({
-          id: String(Date.now()),
+          id: uid(),
           type: "tool_use",
           label: formatToolUse(event.tool as string, event.input as Record<string, any>),
         });
@@ -116,7 +116,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
 
       case "tool_result":
         tab.events.push({
-          id: String(Date.now()),
+          id: uid(),
           type: "tool_result",
           label: (event.content as string) || "Done",
           isError: event.is_error as boolean,
@@ -130,7 +130,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
       case "result":
         if (!event.is_error && event.text) {
           tab.messages.push({
-            id: String(Date.now()),
+            id: uid(),
             role: "assistant",
             content: event.text as string,
           });
@@ -148,7 +148,7 @@ export function useTeamStore(getSession: () => ClientSession | undefined) {
 
       case "error":
         tab.messages.push({
-          id: String(Date.now()),
+          id: uid(),
           role: "error",
           content: event.text as string,
         });

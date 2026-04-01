@@ -4,4 +4,5 @@
 - i want to build a restaurant app. i want to focus now on how to interact with product option groups and options
 - spawn a reddit and a x teamate to search trends and ask me question about them
 - spawn two teammates, each teammate will as multiple choices questions
-- i want you to spin a team to discuss the theme "migration". You'll also have a judge that will get the answer from the team and evaluate.
+- i want you to spin a team to discuss the theme "ai". You'll also have a judge that will get the answer from the team and evaluate.
+

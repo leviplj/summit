@@ -107,6 +107,7 @@ const cancelling = ref(false);
 const messagesEl = ref<HTMLElement>();
 const inputEl = ref<HTMLTextAreaElement>();
 const changedFilesRef = ref<InstanceType<typeof ChangedFiles>>();
+const eventsExpanded = ref(false);
 const sidebarOpen = ref(true);
 const changesOpen = ref(false);
 const projectDialogOpen = ref(false);
@@ -535,21 +536,42 @@ onMounted(() => {
 
           <!-- Tool events -->
           <div v-if="displayEvents.length" class="flex justify-start">
-            <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
-              <div
-                v-for="ev in displayEvents"
-                :key="ev.id"
-                class="flex items-center gap-2 text-xs"
-                :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
-              >
-                <span v-if="ev.type === 'thinking'" class="thinking-dots">
-                  <span>.</span><span>.</span><span>.</span>
-                </span>
-                <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
-                <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
-                <span v-else class="text-green-400">&#10003;</span>
-                <span class="truncate">{{ ev.label }}</span>
-              </div>
+            <div
+              class="max-w-[80%] rounded-lg rounded-bl-sm border border-border bg-card px-3 py-2 cursor-pointer select-none"
+              :class="eventsExpanded ? 'max-h-48 overflow-y-auto' : ''"
+              @click="eventsExpanded = !eventsExpanded"
+            >
+              <template v-if="eventsExpanded">
+                <div
+                  v-for="ev in displayEvents"
+                  :key="ev.id"
+                  class="flex items-center gap-1.5 text-[11px] leading-tight"
+                  :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
+                >
+                  <span v-if="ev.type === 'thinking'" class="thinking-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                  <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
+                  <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
+                  <span v-else class="text-green-400">&#10003;</span>
+                  <span class="truncate">{{ ev.label }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div
+                  class="flex items-center gap-1.5 text-[11px] leading-tight"
+                  :class="displayEvents.at(-1)?.isError ? 'text-red-400' : 'text-muted-foreground'"
+                >
+                  <span v-if="displayEvents.at(-1)?.type === 'thinking'" class="thinking-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                  <span v-else-if="displayEvents.at(-1)?.type === 'tool_use'" class="text-primary">&#9654;</span>
+                  <span v-else-if="displayEvents.at(-1)?.isError" class="text-red-400">&#10007;</span>
+                  <span v-else class="text-green-400">&#10003;</span>
+                  <span class="truncate">{{ displayEvents.at(-1)?.label }}</span>
+                  <span v-if="displayEvents.length > 1" class="text-[10px] text-muted-foreground/50 ml-1">+{{ displayEvents.length - 1 }}</span>
+                </div>
+              </template>
             </div>
           </div>
 

@@ -8,7 +8,7 @@ import type { TeamManager } from "./teamManager";
 export function createTeammateMcpServer(teammateId: string, manager: TeamManager) {
   const checkMailbox = tool(
     "check_mailbox",
-    "Wait for and receive a message from another teammate. Blocks until a message arrives. Use the optional 'from' parameter to wait for a message from a specific teammate.",
+    "Wait for and receive a message from another teammate. Blocks until a message arrives (times out after 30s). If it times out, consider sending a message first or checking team status — everyone waiting without sending causes a deadlock.",
     {
       from: z.string().optional().describe("Only receive messages from this teammate role/ID. If omitted, receives the next message from anyone."),
     },
@@ -20,7 +20,7 @@ export function createTeammateMcpServer(teammateId: string, manager: TeamManager
         };
       } catch (err: any) {
         return {
-          content: [{ type: "text" as const, text: `Error: ${err.message}` }],
+          content: [{ type: "text" as const, text: err.message }],
           isError: true,
         };
       }
@@ -121,7 +121,7 @@ export function createOrchestratorMcpServer(manager: TeamManager) {
 
   const checkMailbox = tool(
     "check_mailbox",
-    "Wait for and receive a message from a teammate. Blocks until a message arrives. Use the optional 'from' parameter to wait for a specific teammate. This is how you receive replies from teammates after sending them a message.",
+    "Wait for and receive a message from a teammate. Blocks until a message arrives (times out after 30s). If it times out, try sending a message or use check_team_status — everyone waiting without sending causes a deadlock.",
     {
       from: z.string().optional().describe("Only receive messages from this teammate ID. If omitted, receives the next message from anyone."),
     },
@@ -133,7 +133,7 @@ export function createOrchestratorMcpServer(manager: TeamManager) {
         };
       } catch (err: any) {
         return {
-          content: [{ type: "text" as const, text: `Error: ${err.message}` }],
+          content: [{ type: "text" as const, text: err.message }],
           isError: true,
         };
       }
