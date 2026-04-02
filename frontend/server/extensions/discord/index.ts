@@ -155,35 +155,41 @@ async function handleThreadReply(api: ExtensionAPI, message: Message) {
 
 // --- Subscribe to query events and post bookends ---
 
-function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: ThreadChannel) {
-  const unsub = api.events.subscribe(sessionId, 0, (event) => {
-    const data = event.data;
+async function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: ThreadChannel) {
+  const stream = api.events.subscribe(sessionId, 0);
+  if (!stream) return;
 
-    switch (data.type) {
-      case "result":
-        thread.send(formatResultForDiscord(String(data.text ?? ""))).catch(logSendError);
-        break;
+  try {
+    for await (const event of stream) {
+      const data = event.data;
 
-      case "error":
-        thread.send(`Error: ${data.text ?? "unknown error"}`).catch(logSendError);
-        break;
+      switch (data.type) {
+        case "result":
+          thread.send(formatResultForDiscord(String(data.text ?? ""))).catch(logSendError);
+          break;
 
-      case "ask_user":
-        pendingAskThreads.add(thread.id);
-        thread.send(formatAskUserForDiscord(data.questions as any[] ?? [])).catch(logSendError);
-        break;
+        case "error":
+          thread.send(`Error: ${data.text ?? "unknown error"}`).catch(logSendError);
+          break;
 
-      case "elicitation":
-        thread.send(
-          `This step requires input in the Summit web UI (session: ${sessionId}).`,
-        ).catch(logSendError);
-        break;
+        case "ask_user":
+          pendingAskThreads.add(thread.id);
+          thread.send(formatAskUserForDiscord(data.questions as any[] ?? [])).catch(logSendError);
+          break;
 
-      case "done":
-        unsub?.();
-        break;
+        case "elicitation":
+          thread.send(
+            `This step requires input in the Summit web UI (session: ${sessionId}).`,
+          ).catch(logSendError);
+          break;
+
+        case "done":
+          return;
+      }
     }
-  });
+  } catch (err: any) {
+    logSendError(err);
+  }
 }
 
 // --- Cross-channel: web query on a Discord-bound session ---
@@ -204,15 +210,27 @@ async function handleCrossChannelNotification(api: ExtensionAPI, sessionId: stri
 
     await thread.send("Session continued from desktop.");
 
-    api.events.subscribe(sessionId, 0, (event) => {
-      const data = event.data;
-      if (data.type === "result") {
-        const summary = formatResultForDiscord(String(data.text ?? "").slice(0, 200));
-        thread.send(`Desktop: Done. ${summary}`).catch(logSendError);
-      } else if (data.type === "error") {
-        thread.send(`Desktop: Error. ${data.text ?? "unknown"}`).catch(logSendError);
+    const stream = api.events.subscribe(sessionId, 0);
+    if (!stream) return;
+
+    // Run in background — don't block the event handler
+    (async () => {
+      try {
+        for await (const event of stream) {
+          const data = event.data;
+          if (data.type === "result") {
+            const summary = formatResultForDiscord(String(data.text ?? "").slice(0, 200));
+            thread.send(`Desktop: Done. ${summary}`).catch(logSendError);
+          } else if (data.type === "error") {
+            thread.send(`Desktop: Error. ${data.text ?? "unknown"}`).catch(logSendError);
+          } else if (data.type === "done") {
+            break;
+          }
+        }
+      } catch (err: any) {
+        logSendError(err);
       }
-    });
+    })();
   } catch (err: any) {
     api.log(`Cross-channel notify failed: ${err.message}`);
   }

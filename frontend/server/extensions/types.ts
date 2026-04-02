@@ -23,7 +23,7 @@ export interface ExtensionAPI {
   events: {
     onQueryInit(listener: (sessionId: string, source: string) => void): () => void;
     onGlobal(listener: (event: GlobalEvent) => void): () => void;
-    subscribe(sessionId: string, afterId: number, listener: (event: StreamEvent) => void): (() => void) | null;
+    subscribe(sessionId: string, afterId: number): AsyncIterable<StreamEvent> | null;
     emit(sessionId: string, data: AppEvent): void;
   };
 

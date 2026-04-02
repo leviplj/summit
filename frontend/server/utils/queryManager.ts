@@ -30,6 +30,13 @@ async function runQuery(
   const provider = getProvider(session.provider ?? "claude-code");
   const errorMessages: Array<{ id: string; role: "error"; content: string }> = [];
 
+  // Persist user message early so external consumers (web UI via global events) see it immediately
+  session.messages.push({ id: String(Date.now() - 1), role: "user", content: text });
+  if (session.messages.filter((m) => m.role === "user").length === 1) {
+    session.title = text.length > 40 ? text.slice(0, 40) + "…" : text;
+  }
+  await saveSession(session);
+
   const resolvedCwd = getSessionCwd(session);
   console.log(`[summit] Query cwd for session ${sessionId}: ${resolvedCwd} (worktrees: ${JSON.stringify(session.worktrees)}, worktreePath: ${session.worktreePath})`);
 
@@ -84,8 +91,7 @@ async function runQuery(
     }
   }
 
-  // Persist
-  session.messages.push({ id: String(Date.now() - 1), role: "user", content: text });
+  // Persist assistant response and errors
   const assistantText = result.getAssistantText();
   if (assistantText) {
     session.messages.push({
@@ -96,10 +102,6 @@ async function runQuery(
     });
   }
   session.messages.push(...errorMessages);
-
-  if (session.messages.filter((m) => m.role === "user").length === 1) {
-    session.title = text.length > 40 ? text.slice(0, 40) + "…" : text;
-  }
 
   await saveSession(session);
   emit(sessionId, { type: "done" });

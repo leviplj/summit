@@ -1,4 +1,5 @@
 import type { AppEvent } from "~~/shared/types";
+import { EventStream } from "./EventStream";
 
 export interface StreamEvent {
   id: number;
@@ -6,9 +7,8 @@ export interface StreamEvent {
 }
 
 export interface ActiveQuery {
-  events: StreamEvent[];
+  stream: EventStream<StreamEvent>;
   done: boolean;
-  listeners: Set<(event: StreamEvent) => void>;
   source: string;
   sessionId: string;
 }
@@ -26,11 +26,8 @@ export function onQueryInit(listener: (sessionId: string, source: string) => voi
 export function emit(sessionId: string, data: AppEvent) {
   const q = active.get(sessionId);
   if (!q) return;
-  const event: StreamEvent = { id: q.events.length, data };
-  q.events.push(event);
-  for (const listener of q.listeners) {
-    listener(event);
-  }
+  const event: StreamEvent = { id: q.stream.events.length, data };
+  q.stream.push(event);
 }
 
 export function getActiveQuery(sessionId: string): ActiveQuery | undefined {
@@ -46,19 +43,10 @@ export function getActiveSessionIds(): string[] {
 export function subscribe(
   sessionId: string,
   afterId: number,
-  listener: (event: StreamEvent) => void,
-): (() => void) | null {
+): AsyncIterable<StreamEvent> | null {
   const q = active.get(sessionId);
   if (!q) return null;
-
-  for (let i = afterId; i < q.events.length; i++) {
-    listener(q.events[i]!);
-  }
-
-  if (q.done) return null;
-
-  q.listeners.add(listener);
-  return () => q.listeners.delete(listener);
+  return q.stream.subscribe(afterId);
 }
 
 /**
@@ -69,7 +57,7 @@ export function initQuery(sessionId: string, source: string = "web"): AbortContr
   const existing = active.get(sessionId);
   if (existing && !existing.done) return null;
 
-  const aq: ActiveQuery = { events: [], done: false, listeners: new Set(), source, sessionId };
+  const aq: ActiveQuery = { stream: new EventStream(), done: false, source, sessionId };
   active.set(sessionId, aq);
 
   const abortController = new AbortController();
@@ -99,7 +87,7 @@ export function finalize(sessionId: string) {
   const aq = active.get(sessionId);
   if (aq) {
     aq.done = true;
-    aq.listeners.clear();
+    aq.stream.end();
     setTimeout(() => active.delete(sessionId), 60_000);
   }
   abortControllers.delete(sessionId);

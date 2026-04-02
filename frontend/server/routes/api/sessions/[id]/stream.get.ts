@@ -1,5 +1,4 @@
 import { getActiveQuery, subscribe } from "~~/server/utils/eventBus";
-import type { StreamEvent } from "~~/server/utils/eventBus";
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
@@ -8,7 +7,12 @@ export default defineEventHandler(async (event) => {
 
   const aq = getActiveQuery(id);
   if (!aq) {
-    // No active query — return 204 so client knows not to stream
+    setResponseStatus(event, 204);
+    return "";
+  }
+
+  const iterable = subscribe(id, after);
+  if (!iterable) {
     setResponseStatus(event, 204);
     return "";
   }
@@ -19,36 +23,26 @@ export default defineEventHandler(async (event) => {
     Connection: "keep-alive",
   });
 
+  const iterator = iterable[Symbol.asyncIterator]();
+  let done = false;
+
   const stream = new ReadableStream({
-    start(controller) {
-      let closed = false;
-
-      const close = () => {
-        if (!closed) {
-          closed = true;
-          controller.close();
-        }
-      };
-
-      const send = (ev: StreamEvent) => {
-        if (closed) return;
-        controller.enqueue(`id: ${ev.id}\ndata: ${JSON.stringify(ev.data)}\n\n`);
-        if (ev.data.type === "done") {
-          close();
-        }
-      };
-
-      const unsub = subscribe(id, after, send);
-      if (!unsub) {
-        // Query already done, all buffered events sent — close
-        close();
+    async pull(controller) {
+      const result = await iterator.next();
+      if (result.done || done) {
+        controller.close();
         return;
       }
-
-      event.node.req.on("close", () => {
-        unsub();
-        close();
-      });
+      const ev = result.value;
+      controller.enqueue(`id: ${ev.id}\ndata: ${JSON.stringify(ev.data)}\n\n`);
+      if (ev.data.type === "done") {
+        done = true;
+        controller.close();
+      }
+    },
+    cancel() {
+      done = true;
+      iterator.return?.();
     },
   });
 
