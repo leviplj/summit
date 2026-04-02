@@ -11,25 +11,22 @@ import {
   formatResultForDiscord,
   formatAskUserForDiscord,
 } from "~~/server/utils/discord";
-import { startQuery } from "~~/server/utils/queryManager";
-import { subscribe, getActiveQuery, onQueryInit, onGlobal } from "~~/server/utils/eventBus";
-import { resolveAskUser } from "~~/server/utils/interactions";
-import { createWorktree } from "~~/server/utils/worktrees";
 import type { StoredSession } from "~~/shared/types";
+import type { ExtensionAPI, ExtensionFactory } from "../types";
 
 // Track threads with a pending ask_user so we know to resolve on reply
 const pendingAskThreads = new Set<string>();
 
-export default defineNitroPlugin((nitro) => {
+const extension: ExtensionFactory = (api) => {
   const token = process.env.DISCORD_BOT_TOKEN;
   const channelId = process.env.DISCORD_CHANNEL_ID;
 
   if (!token) {
-    console.log("[discord] No DISCORD_BOT_TOKEN set — bot disabled");
+    api.log("No DISCORD_BOT_TOKEN set — bot disabled");
     return;
   }
   if (!channelId) {
-    console.log("[discord] No DISCORD_CHANNEL_ID set — bot disabled");
+    api.log("No DISCORD_CHANNEL_ID set — bot disabled");
     return;
   }
 
@@ -44,7 +41,7 @@ export default defineNitroPlugin((nitro) => {
   setDiscordClient(client, channelId);
 
   client.once("ready", async () => {
-    console.log(`[discord] Bot ready as ${client.user?.tag}`);
+    api.log(`Bot ready as ${client.user?.tag}`);
     await rebuildThreadMap();
   });
 
@@ -53,39 +50,39 @@ export default defineNitroPlugin((nitro) => {
     if (message.author.bot) return;
 
     if (message.channel.type === ChannelType.PublicThread || message.channel.type === ChannelType.PrivateThread) {
-      await handleThreadReply(message);
+      await handleThreadReply(api, message);
       return;
     }
 
     if (message.channel.id !== channelId) return;
-    await handleChannelMessage(message);
+    await handleChannelMessage(api, message);
   });
 
   // Cross-channel: when any query starts, check if it's a web query on a Discord session
-  onQueryInit(async (sessionId, source) => {
+  api.events.onQueryInit(async (sessionId, source) => {
     if (source !== "web") return;
-    await handleCrossChannelNotification(sessionId);
+    await handleCrossChannelNotification(api, sessionId);
   });
 
   // Notify Discord thread when a session is deleted from the web UI
-  onGlobal(async (event) => {
+  api.events.onGlobal(async (event) => {
     if (event.type !== "session_deleted") return;
     await handleSessionDeleted(event.sessionId, event.meta);
   });
 
-  nitro.hooks.hook("close", async () => {
-    console.log("[discord] Shutting down bot");
+  api.onShutdown(() => {
+    api.log("Shutting down bot");
     client.destroy();
   });
 
   client.login(token).catch((err) => {
-    console.error("[discord] Failed to login:", err.message);
+    api.log(`Failed to login: ${err.message}`);
   });
-});
+};
 
 // --- Channel message: create thread + session + query ---
 
-async function handleChannelMessage(message: Message) {
+async function handleChannelMessage(api: ExtensionAPI, message: Message) {
   const threadName = message.content.length > 100
     ? message.content.slice(0, 97) + "..."
     : message.content;
@@ -94,18 +91,18 @@ async function handleChannelMessage(message: Message) {
   try {
     thread = await message.startThread({ name: threadName });
   } catch (err: any) {
-    console.error("[discord] Failed to create thread:", err.message);
+    api.log(`Failed to create thread: ${err.message}`);
     return;
   }
 
-  const sessionId = crypto.randomUUID();
+  const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const wtPath = await createWorktree(sessionId);
-  const branch = `summit/${sessionId}`;
+  const wtPath = await api.worktrees.create(id);
+  const branch = `summit/${id}`;
 
   const session: StoredSession = {
-    id: sessionId,
+    id,
     title: threadName,
     model: null,
     provider: "claude-code",
@@ -124,42 +121,42 @@ async function handleChannelMessage(message: Message) {
     updatedAt: now,
   };
 
-  await saveSession(session);
-  setThreadSession(thread.id, sessionId);
+  await api.sessions.save(session);
+  setThreadSession(thread.id, id);
 
   await thread.send("On it.");
-  await startQuery(sessionId, message.content, "discord");
-  subscribeToQuery(sessionId, thread);
+  await api.queries.start(id, message.content, "discord");
+  subscribeToQuery(api, id, thread);
 }
 
 // --- Thread reply: resolve ask_user or start follow-up ---
 
-async function handleThreadReply(message: Message) {
+async function handleThreadReply(api: ExtensionAPI, message: Message) {
   const threadId = message.channel.id;
   const sessionId = getSessionForThread(threadId);
   if (!sessionId) return;
 
   if (pendingAskThreads.has(threadId)) {
-    resolveAskUser(sessionId, { question: message.content });
+    api.interactions.resolveAskUser(sessionId, { question: message.content });
     pendingAskThreads.delete(threadId);
     return;
   }
 
-  const activeQuery = getActiveQuery(sessionId);
+  const activeQuery = api.queries.getActive(sessionId);
   if (activeQuery && !activeQuery.done) {
     await (message.channel as ThreadChannel).send("Still working on the previous request.");
     return;
   }
 
   await (message.channel as ThreadChannel).send("On it.");
-  await startQuery(sessionId, message.content, "discord");
-  subscribeToQuery(sessionId, message.channel as ThreadChannel);
+  await api.queries.start(sessionId, message.content, "discord");
+  subscribeToQuery(api, sessionId, message.channel as ThreadChannel);
 }
 
 // --- Subscribe to query events and post bookends ---
 
-function subscribeToQuery(sessionId: string, thread: ThreadChannel) {
-  const unsub = subscribe(sessionId, 0, (event) => {
+function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: ThreadChannel) {
+  const unsub = api.events.subscribe(sessionId, 0, (event) => {
     const data = event.data;
 
     switch (data.type) {
@@ -191,8 +188,8 @@ function subscribeToQuery(sessionId: string, thread: ThreadChannel) {
 
 // --- Cross-channel: web query on a Discord-bound session ---
 
-async function handleCrossChannelNotification(sessionId: string) {
-  const session = await getStoredSession(sessionId);
+async function handleCrossChannelNotification(api: ExtensionAPI, sessionId: string) {
+  const session = await api.sessions.get(sessionId);
   if (!session) return;
 
   const meta = getDiscordMeta(session);
@@ -207,7 +204,7 @@ async function handleCrossChannelNotification(sessionId: string) {
 
     await thread.send("Session continued from desktop.");
 
-    subscribe(sessionId, 0, (event) => {
+    api.events.subscribe(sessionId, 0, (event) => {
       const data = event.data;
       if (data.type === "result") {
         const summary = formatResultForDiscord(String(data.text ?? "").slice(0, 200));
@@ -217,7 +214,7 @@ async function handleCrossChannelNotification(sessionId: string) {
       }
     });
   } catch (err: any) {
-    console.error("[discord] Cross-channel notify failed:", err.message);
+    api.log(`Cross-channel notify failed: ${err.message}`);
   }
 }
 
@@ -234,10 +231,12 @@ async function handleSessionDeleted(sessionId: string, meta?: Record<string, unk
       await thread.send("Session deleted from Summit.");
     }
   } catch (err: any) {
-    console.error("[discord] Failed to notify thread of deletion:", err.message);
+    console.error("[ext:discord] Failed to notify thread of deletion:", err.message);
   }
 }
 
 function logSendError(err: any) {
-  console.error("[discord] Failed to send message:", err.message);
+  console.error("[ext:discord] Failed to send message:", err.message);
 }
+
+export default extension;
