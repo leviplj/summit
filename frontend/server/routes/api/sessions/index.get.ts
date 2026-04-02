@@ -19,6 +19,7 @@ export default defineEventHandler(async (event): Promise<SessionListItem[]> => {
     id: s.id,
     title: s.title,
     model: s.model || null,
+    provider: s.provider || "claude-code",
     projectId: s.projectId || null,
     branch: s.branch || null,
     worktrees: s.worktrees || {},

@@ -1,3 +1,5 @@
+import { startQuery } from "~~/server/utils/queryManager";
+
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ text: string; sessionId: string }>(event);
   if (!body?.text || !body?.sessionId) {

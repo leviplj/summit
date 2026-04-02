@@ -38,3 +38,7 @@ Summit runs locally — to interact with it, you need to be at the machine. If y
 - **Rich embeds**: Plain text messages for now. Fancy formatting can come later.
 - **Multi-server support**: One Discord server, one channel. Enough for personal use.
 - **Bot when Summit is offline**: No queuing or deferred execution. If Summit isn't running, the bot is offline.
+
+## Related Changes
+
+- `provider-abstraction`: Extracts the event bus (`startQuery`, `subscribe`, `finalize`) and interaction resolution (`resolveAskUser`, `resolveElicitation`) from `queries.ts` into standalone modules with channel-agnostic `source` tracking. Also adds `channelMeta` to `StoredSession` for channel-specific metadata. These are prerequisites for clean Discord integration — the bot will consume the extracted modules directly instead of importing from SDK-coupled code.

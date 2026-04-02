@@ -63,12 +63,15 @@ onUnmounted(() => document.removeEventListener("click", handleClickOutside));
         >
           <span class="flex-1">All Sessions</span>
         </button>
-        <button
+        <div
           v-for="p in projects"
           :key="p.id"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent"
+          role="button"
+          tabindex="0"
+          class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent"
           :class="p.id === activeProject?.id ? 'bg-accent/50 text-foreground' : 'text-muted-foreground'"
           @click.stop="select(p.id)"
+          @keydown.enter.stop="select(p.id)"
         >
           <span class="relative">
             <FolderGit2 class="h-3 w-3 shrink-0" />
@@ -86,7 +89,7 @@ onUnmounted(() => document.removeEventListener("click", handleClickOutside));
           >
             <Settings class="h-3 w-3" />
           </button>
-        </button>
+        </div>
       </div>
       <div class="border-t border-border">
         <button

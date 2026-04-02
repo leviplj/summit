@@ -1,3 +1,5 @@
+import { resolveElicitation } from "~~/server/utils/interactions";
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
   const body = await readBody<{

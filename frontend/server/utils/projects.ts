@@ -44,6 +44,9 @@ export async function validateRepoPath(path: string): Promise<void> {
 export function validateRepoNames(repos: Array<{ name: string; path: string }>): void {
   const names = new Set<string>();
   for (const repo of repos) {
+    if (!repo.name || !repo.name.trim()) {
+      throw createError({ statusCode: 400, message: "Repo name cannot be empty" });
+    }
     if (names.has(repo.name)) {
       throw createError({ statusCode: 400, message: `Duplicate repo name: ${repo.name}` });
     }

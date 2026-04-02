@@ -70,6 +70,9 @@ export async function createProjectWorktrees(
 
   await Promise.all(
     repos.map(async (repo) => {
+      if (!repo.name) {
+        throw new Error("Repo name cannot be empty");
+      }
       const wtPath = join(sessionDir, repo.name);
       const branch = `summit/${sessionId}/${repo.name}`;
 

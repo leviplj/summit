@@ -35,6 +35,7 @@ export default defineEventHandler(async (event) => {
     id: body.id,
     title: body.title || "New chat",
     model: body.model || null,
+    provider: "claude-code",
     agentSessionId: null,
     projectId,
     worktreePath: wtPath,

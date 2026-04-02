@@ -1,3 +1,6 @@
+import { getActiveQuery, subscribe } from "~~/server/utils/eventBus";
+import type { StreamEvent } from "~~/server/utils/eventBus";
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
   const afterParam = getQuery(event).after;

@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { getProvider } from "~~/server/providers/registry";
 
 const exec = promisify(execFile);
 
@@ -28,22 +28,8 @@ export default defineEventHandler(async (event) => {
 
     const prompt = `Write a concise git commit message (one line, max 72 chars) for this diff. Return ONLY the message, no quotes, no prefix, no explanation.\n\n${truncatedDiff}`;
 
-    let message = "";
-    const q = query({
-      prompt,
-      options: {
-        maxTurns: 1,
-        model: "haiku",
-        allowedTools: [],
-      },
-    });
-
-    for await (const ev of q) {
-      if (ev.type === "result" && "result" in ev) {
-        message = (ev as any).result;
-        break;
-      }
-    }
+    const provider = getProvider(session.provider ?? "claude-code");
+    let message = await provider.complete(prompt, "haiku");
 
     message = message.trim().replace(/^["']|["']$/g, "").replace(/^(commit message:?\s*)/i, "").trim();
 

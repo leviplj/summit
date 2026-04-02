@@ -1,3 +1,5 @@
+import { cancelQuery } from "~~/server/utils/eventBus";
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
 

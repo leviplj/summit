@@ -17,11 +17,13 @@ export interface StoredSession {
   id: string;
   title: string;
   model: string | null;
+  provider: string;
   agentSessionId: string | null;
   projectId: string | null;
   worktreePath: string | null;
   branch: string | null;
   worktrees: Record<string, string>;
+  channelMeta?: Record<string, unknown>;
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
@@ -31,6 +33,7 @@ export interface SessionListItem {
   id: string;
   title: string;
   model: string | null;
+  provider: string;
   projectId: string | null;
   branch: string | null;
   worktrees: Record<string, string>;
