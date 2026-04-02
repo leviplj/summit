@@ -56,13 +56,22 @@
 - [x] 7.4 Update model selector to fetch from `GET /api/providers` and group models by provider (or keep flat for single provider)
 - [x] 7.5 Keep `app/constants/models.ts` as a fallback until the providers endpoint is wired to the frontend
 
-## 8. Validation
+## 8. Global event bus for session lifecycle
 
-- [x] 8.1 Verify the dev server starts without errors (`bun run dev`)
-- [ ] 8.2 Verify sending a message works end-to-end (creates query, streams events, persists session)
-- [ ] 8.3 Verify ask_user flow works (question appears, answer resolves, agent continues)
-- [ ] 8.4 Verify elicitation flow works
-- [ ] 8.5 Verify cancel works mid-query
-- [ ] 8.6 Verify commit message generation works via the changed files panel
-- [ ] 8.7 Verify session resume works (send second message on existing session)
-- [ ] 8.8 Verify `GET /api/providers` returns correct provider data
+- [x] 8.1 Add `GlobalEvent` interface to `eventBus.ts` with `type`, `sessionId`, and optional `meta`
+- [x] 8.2 Add `emitGlobal()` and `onGlobal()` to eventBus — generic pub/sub for app-level events, decoupled from per-session streaming
+- [x] 8.3 `saveSession()` emits `session_created` for new files; `deleteSessionFile()` emits `session_deleted` with optional metadata
+- [x] 8.4 `initQuery()` emits `session_updated` so consumers can react to query starts
+- [x] 8.5 Create `GET /api/events/stream` SSE endpoint that streams `GlobalEvent`s to connected clients
+- [x] 8.6 Create `useGlobalEvents` frontend composable that connects to global SSE and triggers callbacks on session changes
+
+## 9. Validation
+
+- [x] 9.1 Verify the dev server starts without errors (`bun run dev`)
+- [ ] 9.2 Verify sending a message works end-to-end (creates query, streams events, persists session)
+- [ ] 9.3 Verify ask_user flow works (question appears, answer resolves, agent continues)
+- [ ] 9.4 Verify elicitation flow works
+- [ ] 9.5 Verify cancel works mid-query
+- [ ] 9.6 Verify commit message generation works via the changed files panel
+- [ ] 9.7 Verify session resume works (send second message on existing session)
+- [ ] 9.8 Verify `GET /api/providers` returns correct provider data

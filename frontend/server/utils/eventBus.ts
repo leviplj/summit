@@ -15,6 +15,13 @@ export interface ActiveQuery {
 
 const active = new Map<string, ActiveQuery>();
 const abortControllers = new Map<string, AbortController>();
+const queryInitListeners = new Set<(sessionId: string, source: string) => void>();
+
+/** Register a callback invoked whenever a new query is initialized. */
+export function onQueryInit(listener: (sessionId: string, source: string) => void): () => void {
+  queryInitListeners.add(listener);
+  return () => queryInitListeners.delete(listener);
+}
 
 export function emit(sessionId: string, data: AppEvent) {
   const q = active.get(sessionId);
@@ -67,6 +74,13 @@ export function initQuery(sessionId: string, source: string = "web"): AbortContr
 
   const abortController = new AbortController();
   abortControllers.set(sessionId, abortController);
+
+  for (const listener of queryInitListeners) {
+    listener(sessionId, source);
+  }
+
+  emitGlobal({ type: "session_updated", sessionId });
+
   return abortController;
 }
 
@@ -89,4 +103,25 @@ export function finalize(sessionId: string) {
     setTimeout(() => active.delete(sessionId), 60_000);
   }
   abortControllers.delete(sessionId);
+}
+
+// --- Global broadcast (session-level lifecycle events) ---
+
+export interface GlobalEvent {
+  type: "session_created" | "session_deleted" | "session_updated";
+  sessionId: string;
+  meta?: Record<string, unknown>;
+}
+
+const globalListeners = new Set<(event: GlobalEvent) => void>();
+
+export function emitGlobal(event: GlobalEvent) {
+  for (const listener of globalListeners) {
+    listener(event);
+  }
+}
+
+export function onGlobal(listener: (event: GlobalEvent) => void): () => void {
+  globalListeners.add(listener);
+  return () => globalListeners.delete(listener);
 }

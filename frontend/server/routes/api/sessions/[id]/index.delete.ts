@@ -8,6 +8,6 @@ export default defineEventHandler(async (event) => {
     await removeWorktree(id);
   }
 
-  await deleteSessionFile(id);
+  await deleteSessionFile(id, session?.channelMeta);
   return { ok: true };
 });

@@ -261,6 +261,18 @@ export function useChat() {
     }
   });
 
+  // Refetch session list when sessions are created/deleted externally (e.g. Discord)
+  useGlobalEvents(async () => {
+    const sessionsWithStatus = await store.loadSessions();
+    for (const { session, hasActiveQuery } of sessionsWithStatus) {
+      if (hasActiveQuery && !streamState.has(session.id)) {
+        session.loading = true;
+        session.status = "waiting";
+        startStreaming(session);
+      }
+    }
+  });
+
   const sessionCost = computed(() => {
     const msgs = store.activeSession.value?.messages;
     if (!msgs) return null;

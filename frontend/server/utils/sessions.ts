@@ -1,6 +1,7 @@
 import { readFile, writeFile, readdir, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import type { StoredSession } from "~~/shared/types";
+import { emitGlobal } from "./eventBus";
 
 export type { StoredSession };
 
@@ -22,6 +23,15 @@ function validateId(id: string): void {
 
 function sessionPath(id: string) {
   return join(SESSIONS_DIR, `${id}.json`);
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await readFile(path, { flag: "r" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function listSessions(): Promise<StoredSession[]> {
@@ -57,13 +67,19 @@ export async function getStoredSession(id: string): Promise<StoredSession | null
 export async function saveSession(session: StoredSession): Promise<void> {
   validateId(session.id);
   await ensureDir();
+  const path = sessionPath(session.id);
+  const isNew = !await fileExists(path);
   session.updatedAt = new Date().toISOString();
-  await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2));
+  await writeFile(path, JSON.stringify(session, null, 2));
+  if (isNew) {
+    emitGlobal({ type: "session_created", sessionId: session.id });
+  }
 }
 
-export async function deleteSessionFile(id: string): Promise<void> {
+export async function deleteSessionFile(id: string, meta?: Record<string, unknown>): Promise<void> {
   validateId(id);
   try {
     await unlink(sessionPath(id));
+    emitGlobal({ type: "session_deleted", sessionId: id, meta });
   } catch {}
 }

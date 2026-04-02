@@ -1,3 +1,5 @@
 - add git integration?
 - [x] provider abstraction — decoupled query engine from Claude SDK, extracted event bus, interactions, session helpers, provider registry
   - needs manual validation (tasks 8.2-8.8): end-to-end messaging, ask_user, elicitation, cancel, commit gen, resume, providers API
+- [x] discord integration — bot plugin, utility module, cross-channel notifications via eventBus `onQueryInit` hook
+  - needs: set DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID env vars and test with a real Discord server
