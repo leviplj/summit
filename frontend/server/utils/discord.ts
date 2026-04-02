@@ -52,6 +52,12 @@ export function formatResultForDiscord(text: string): string {
   return `${truncated}\n\n… _(truncated — see Summit for full results)_`;
 }
 
+/** Check if ask_user questions have selectable options */
+export function hasAskUserOptions(questions: AskUserQuestion[]): boolean {
+  return questions.some((q) => q.options.length > 0);
+}
+
+/** Plain text fallback for ask_user (free-form questions) */
 export function formatAskUserForDiscord(questions: AskUserQuestion[]): string {
   const lines: string[] = ["**The agent has a question:**\n"];
   for (const q of questions) {

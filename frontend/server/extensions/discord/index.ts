@@ -1,4 +1,11 @@
-import { Client, GatewayIntentBits, ChannelType } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  ChannelType,
+  EmbedBuilder,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+} from "discord.js";
 import type { Message, ThreadChannel } from "discord.js";
 import {
   rebuildThreadMap,
@@ -9,13 +16,20 @@ import {
   getDiscordMeta,
   makeChannelMeta,
   formatResultForDiscord,
-  formatAskUserForDiscord,
 } from "~~/server/utils/discord";
+import type { AskUserQuestion } from "~~/shared/types";
 import type { StoredSession } from "~~/shared/types";
 import type { ExtensionAPI, ExtensionFactory } from "../types";
 
-// Track threads with a pending ask_user so we know to resolve on reply
-const pendingAskThreads = new Set<string>();
+// Track threads with pending ask_user questions
+// Maps threadId → { sessionId, total question count, collected answers }
+interface PendingAsk {
+  sessionId: string;
+  total: number;
+  questions: AskUserQuestion[];
+  answers: Record<string, string>;
+}
+const pendingAskThreads = new Map<string, PendingAsk>();
 
 const extension: ExtensionFactory = (api) => {
   const token = process.env.DISCORD_BOT_TOKEN;
@@ -56,6 +70,39 @@ const extension: ExtensionFactory = (api) => {
 
     if (message.channel.id !== channelId) return;
     await handleChannelMessage(api, message);
+  });
+
+  // Handle select menu interactions (ask_user with options)
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isStringSelectMenu()) return;
+    if (!interaction.customId.startsWith("askuser:")) return;
+
+    const threadId = interaction.channelId;
+    const pending = threadId ? pendingAskThreads.get(threadId) : undefined;
+    if (!pending) {
+      await interaction.reply({ content: "This question has already been answered.", flags: 64 }).catch(logSendError);
+      return;
+    }
+
+    const qi = parseInt(interaction.customId.slice("askuser:".length), 10);
+    const question = pending.questions[qi];
+    const answer = interaction.values[0] ?? "";
+
+    if (question) {
+      pending.answers[question.question] = answer;
+    }
+
+    await interaction.update({
+      content: `**${question?.header || "Answer"}**: ${answer}`,
+      embeds: [],
+      components: [],
+    }).catch(logSendError);
+
+    // Resolve when all questions have been answered
+    if (Object.keys(pending.answers).length >= pending.total) {
+      api.interactions.resolveAskUser(pending.sessionId, pending.answers);
+      pendingAskThreads.delete(threadId!);
+    }
   });
 
   // Cross-channel: when any query starts, check if it's a web query on a Discord session
@@ -136,8 +183,11 @@ async function handleThreadReply(api: ExtensionAPI, message: Message) {
   const sessionId = getSessionForThread(threadId);
   if (!sessionId) return;
 
-  if (pendingAskThreads.has(threadId)) {
-    api.interactions.resolveAskUser(sessionId, { question: message.content });
+  const pending = pendingAskThreads.get(threadId);
+  if (pending) {
+    // Free-form text reply — resolve with the message content
+    pending.answers["question"] = message.content;
+    api.interactions.resolveAskUser(pending.sessionId, pending.answers);
     pendingAskThreads.delete(threadId);
     return;
   }
@@ -172,10 +222,17 @@ async function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: Th
           thread.send(`Error: ${data.text ?? "unknown error"}`).catch(logSendError);
           break;
 
-        case "ask_user":
-          pendingAskThreads.add(thread.id);
-          thread.send(formatAskUserForDiscord(data.questions as any[] ?? [])).catch(logSendError);
+        case "ask_user": {
+          const questions = data.questions as AskUserQuestion[] ?? [];
+          pendingAskThreads.set(thread.id, {
+            sessionId,
+            total: questions.length,
+            questions,
+            answers: {},
+          });
+          sendAskUser(thread, questions).catch(logSendError);
           break;
+        }
 
         case "elicitation":
           thread.send(
@@ -250,6 +307,36 @@ async function handleSessionDeleted(sessionId: string, meta?: Record<string, unk
     }
   } catch (err: any) {
     console.error("[ext:discord] Failed to notify thread of deletion:", err.message);
+  }
+}
+
+async function sendAskUser(thread: ThreadChannel, questions: AskUserQuestion[]) {
+  for (let qi = 0; qi < questions.length; qi++) {
+    const q = questions[qi]!;
+    const embed = new EmbedBuilder()
+      .setTitle(q.header || "The agent has a question")
+      .setDescription(q.question)
+      .setColor(0x7C3AED);
+
+    if (q.options.length > 0) {
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(`askuser:${qi}`)
+        .setPlaceholder("Select an option…");
+
+      for (const opt of q.options.slice(0, 25)) {
+        select.addOptions({
+          label: opt.label.slice(0, 100),
+          value: opt.label,
+          description: opt.description?.slice(0, 100) || undefined,
+        });
+      }
+
+      const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+      await thread.send({ embeds: [embed], components: [row] });
+    } else {
+      embed.setFooter({ text: "Reply in this thread to answer." });
+      await thread.send({ embeds: [embed] });
+    }
   }
 }
 
