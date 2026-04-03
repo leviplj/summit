@@ -7,6 +7,7 @@ export interface ChatMessage {
   role: "user" | "assistant" | "error";
   content: string;
   meta?: ChatMessageMeta;
+  agentId?: string;
 }
 
 export interface ChatMessageMeta {
@@ -67,6 +68,7 @@ export interface AppEvent {
 
 export interface StreamEvent {
   id: number;
+  timestamp: number;
   data: AppEvent;
 }
 
@@ -220,14 +222,17 @@ export interface ExtensionAPI {
   /** Event bus access */
   events: {
     onQueryInit(listener: (sessionId: string, source: string) => void): () => void;
+    onBeforeQuery(hook: (ctx: { sessionId: string; prompt: string; source: string }) => void | Promise<void>): () => void;
     onGlobal(listener: (event: GlobalEvent) => void): () => void;
     subscribe(sessionId: string, afterId: number): AsyncIterable<StreamEvent> | null;
     emit(sessionId: string, data: AppEvent): void;
+    holdStream(sessionId: string): (() => void) | null;
   };
 
   /** Query management */
   queries: {
     start(sessionId: string, text: string, source?: string): Promise<void>;
+    run(sessionId: string, prompt: string, opts: { agentId: string; source?: string }): Promise<void>;
     getActive(sessionId: string): ActiveQuery | undefined;
   };
 
@@ -238,8 +243,8 @@ export interface ExtensionAPI {
 
   /** Interaction resolution */
   interactions: {
-    resolveAskUser(sessionId: string, answers: Record<string, string>): boolean;
-    createPendingAskUser(sessionId: string, source: string): Promise<Record<string, string>>;
+    resolveAskUser(sessionId: string, answers: Record<string, string>, askId?: string): boolean;
+    createPendingAskUser(sessionId: string, source: string, askId?: string): Promise<Record<string, string>>;
   };
 
   /** Worktree management */

@@ -15,11 +15,12 @@ interface PendingElicitation {
 const pendingAskUser = new Map<string, PendingAskUser>();
 const pendingElicitations = new Map<string, PendingElicitation>();
 
-export function resolveAskUser(sessionId: string, answers: Record<string, string>): boolean {
-  const pending = pendingAskUser.get(sessionId);
+export function resolveAskUser(sessionId: string, answers: Record<string, string>, askId?: string): boolean {
+  const key = askId ? `${sessionId}:${askId}` : sessionId;
+  const pending = pendingAskUser.get(key);
   if (!pending) return false;
   pending.resolve(answers);
-  pendingAskUser.delete(sessionId);
+  pendingAskUser.delete(key);
   return true;
 }
 
@@ -34,9 +35,10 @@ export function resolveElicitation(
   return true;
 }
 
-export function createPendingAskUser(sessionId: string, source: string): Promise<Record<string, string>> {
+export function createPendingAskUser(sessionId: string, source: string, askId?: string): Promise<Record<string, string>> {
+  const key = askId ? `${sessionId}:${askId}` : sessionId;
   return new Promise<Record<string, string>>((resolve) => {
-    pendingAskUser.set(sessionId, { resolve, source });
+    pendingAskUser.set(key, { resolve, source });
   });
 }
 
@@ -46,12 +48,19 @@ export function createPendingElicitation(elicitationId: string): Promise<Elicita
   });
 }
 
-export function getAskUserSource(sessionId: string): string | undefined {
-  return pendingAskUser.get(sessionId)?.source;
+export function getAskUserSource(sessionId: string, askId?: string): string | undefined {
+  const key = askId ? `${sessionId}:${askId}` : sessionId;
+  return pendingAskUser.get(key)?.source;
 }
 
 export function cleanupSession(sessionId: string) {
   pendingAskUser.delete(sessionId);
+  // Also clean up any composite keys from sub-queries (sessionId:askId)
+  for (const key of pendingAskUser.keys()) {
+    if (key.startsWith(`${sessionId}:`)) {
+      pendingAskUser.delete(key);
+    }
+  }
   // Note: elicitations are keyed by elicitationId, not sessionId.
   // They are cleaned up when the query finishes naturally or by abort.
 }

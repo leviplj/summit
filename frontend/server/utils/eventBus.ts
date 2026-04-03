@@ -3,6 +3,7 @@ import { EventStream } from "./EventStream";
 
 export interface StreamEvent {
   id: number;
+  timestamp: number;
   data: AppEvent;
 }
 
@@ -15,7 +16,11 @@ export interface ActiveQuery {
 
 const active = new Map<string, ActiveQuery>();
 const abortControllers = new Map<string, AbortController>();
+const streamHolds = new Map<string, number>();
+
+const HOLD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const queryInitListeners = new Set<(sessionId: string, source: string) => void>();
+const beforeQueryHooks = new Set<(ctx: { sessionId: string; prompt: string; source: string }) => void | Promise<void>>();
 
 /** Register a callback invoked whenever a new query is initialized. */
 export function onQueryInit(listener: (sessionId: string, source: string) => void): () => void {
@@ -23,10 +28,27 @@ export function onQueryInit(listener: (sessionId: string, source: string) => voi
   return () => queryInitListeners.delete(listener);
 }
 
+/** Register a hook invoked before each query executes (after initQuery, before provider.runQuery). */
+export function onBeforeQuery(hook: (ctx: { sessionId: string; prompt: string; source: string }) => void | Promise<void>): () => void {
+  beforeQueryHooks.add(hook);
+  return () => beforeQueryHooks.delete(hook);
+}
+
+/** Fire all onBeforeQuery hooks. Errors are logged but don't block the query. */
+export async function fireBeforeQueryHooks(ctx: { sessionId: string; prompt: string; source: string }): Promise<void> {
+  await Promise.all(
+    Array.from(beforeQueryHooks).map((hook) =>
+      Promise.resolve(hook(ctx)).catch((err) =>
+        console.error(`[summit] onBeforeQuery hook error:`, err)
+      )
+    )
+  );
+}
+
 export function emit(sessionId: string, data: AppEvent) {
   const q = active.get(sessionId);
   if (!q) return;
-  const event: StreamEvent = { id: q.stream.events.length, data };
+  const event: StreamEvent = { id: q.stream.events.length, timestamp: Date.now(), data };
   q.stream.push(event);
 }
 
@@ -72,6 +94,10 @@ export function initQuery(sessionId: string, source: string = "web"): AbortContr
   return abortController;
 }
 
+export function getAbortController(sessionId: string): AbortController | undefined {
+  return abortControllers.get(sessionId);
+}
+
 export function cancelQuery(sessionId: string): boolean {
   const controller = abortControllers.get(sessionId);
   if (!controller) return false;
@@ -83,12 +109,58 @@ export function getQuerySource(sessionId: string): string | undefined {
   return active.get(sessionId)?.source;
 }
 
+/**
+ * Hold the stream open for a session. Returns a release function, or null if no active query.
+ * The stream won't close until all holds are released and finalize() has been called.
+ */
+export function holdStream(sessionId: string): (() => void) | null {
+  const aq = active.get(sessionId);
+  if (!aq) return null;
+
+  const current = streamHolds.get(sessionId) ?? 0;
+  streamHolds.set(sessionId, current + 1);
+
+  let released = false;
+  const timeout = setTimeout(() => {
+    if (!released) {
+      console.warn(`[summit] holdStream safety timeout for session ${sessionId} — auto-releasing`);
+      release();
+    }
+  }, HOLD_TIMEOUT_MS);
+
+  const release = () => {
+    if (released) return;
+    released = true;
+    clearTimeout(timeout);
+
+    const holds = (streamHolds.get(sessionId) ?? 1) - 1;
+    if (holds <= 0) {
+      streamHolds.delete(sessionId);
+      // If finalize was already called (done=true), now actually close the stream
+      const q = active.get(sessionId);
+      if (q?.done) {
+        q.stream.end();
+        setTimeout(() => active.delete(sessionId), 60_000);
+      }
+    } else {
+      streamHolds.set(sessionId, holds);
+    }
+  };
+
+  return release;
+}
+
 export function finalize(sessionId: string) {
   const aq = active.get(sessionId);
   if (aq) {
     aq.done = true;
-    aq.stream.end();
-    setTimeout(() => active.delete(sessionId), 60_000);
+    const holds = streamHolds.get(sessionId) ?? 0;
+    if (holds === 0) {
+      // No holds — close immediately
+      aq.stream.end();
+      setTimeout(() => active.delete(sessionId), 60_000);
+    }
+    // If holds > 0, stream stays open until last hold is released
   }
   abortControllers.delete(sessionId);
 }

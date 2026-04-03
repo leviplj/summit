@@ -2,12 +2,14 @@ import type { ExtensionAPI } from "./types";
 import { getStoredSession, saveSession, listSessions } from "~~/server/utils/sessions";
 import {
   onQueryInit,
+  onBeforeQuery,
   onGlobal,
   subscribe,
   emit,
   getActiveQuery,
+  holdStream,
 } from "~~/server/utils/eventBus";
-import { startQuery } from "~~/server/utils/queryManager";
+import { startQuery, runSubQuery } from "~~/server/utils/queryManager";
 import { registerProvider } from "~~/server/providers/registry";
 import { resolveAskUser, createPendingAskUser } from "~~/server/utils/interactions";
 import { createWorktree } from "~~/server/utils/worktrees";
@@ -35,13 +37,16 @@ export function createExtensionAPI(
 
     events: {
       onQueryInit,
+      onBeforeQuery,
       onGlobal,
       subscribe,
       emit,
+      holdStream,
     },
 
     queries: {
       start: startQuery,
+      run: runSubQuery,
       getActive: getActiveQuery,
     },
 
