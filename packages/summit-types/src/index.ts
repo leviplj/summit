@@ -57,26 +57,121 @@ export interface SessionListItem {
 // Event types
 // =============================================================================
 
-export interface AppEvent {
-  type:
-    | "init"
-    | "thinking"
-    | "tool_use"
-    | "tool_result"
-    | "text"
-    | "result"
-    | "error"
-    | "done"
-    | "elicitation"
-    | "ask_user"
-    | "cancelled"
-    | "team_created"
-    | "conversation_status"
-    | "conversation_message"
-    | "conversation_done"
-    | "turn_done";
-  [key: string]: unknown;
+interface BaseEvent {
+  conversationId?: string;
 }
+
+export interface InitEvent extends BaseEvent {
+  type: "init";
+  sessionId: string | null;
+  model: string;
+  tools: number;
+}
+
+export interface ThinkingEvent extends BaseEvent {
+  type: "thinking";
+}
+
+export interface TextEvent extends BaseEvent {
+  type: "text";
+  text: string;
+}
+
+export interface ToolUseEvent extends BaseEvent {
+  type: "tool_use";
+  tool: string;
+  input: Record<string, any>;
+}
+
+export interface ToolResultEvent extends BaseEvent {
+  type: "tool_result";
+  is_error: boolean;
+  content: string;
+}
+
+export interface ResultEvent extends BaseEvent {
+  type: "result";
+  text: string;
+  is_error: boolean;
+  duration_ms: number;
+  cost_usd: number;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
+export interface ErrorEvent extends BaseEvent {
+  type: "error";
+  text: string;
+}
+
+export interface DoneEvent extends BaseEvent {
+  type: "done";
+}
+
+export interface TurnDoneEvent extends BaseEvent {
+  type: "turn_done";
+}
+
+export interface CancelledEvent extends BaseEvent {
+  type: "cancelled";
+}
+
+export interface AskUserEvent extends BaseEvent {
+  type: "ask_user";
+  questions: AskUserQuestion[];
+}
+
+export interface ElicitationEvent extends BaseEvent {
+  type: "elicitation";
+  elicitationId: string;
+  serverName: string;
+  message: string;
+  schema?: Record<string, unknown>;
+}
+
+export interface TeamCreatedEvent extends BaseEvent {
+  type: "team_created";
+  teammates: Array<{ id: string; role: string }>;
+}
+
+export interface ConversationStatusEvent {
+  type: "conversation_status";
+  conversationId: string;
+  conversationRole: string;
+  status: "working" | "done" | "error" | "cancelled";
+  error?: string;
+}
+
+export interface ConversationDoneEvent {
+  type: "conversation_done";
+  conversationId: string;
+  conversationRole: string;
+}
+
+export interface ConversationMessageEvent {
+  type: "conversation_message";
+  from: string;
+  to: string;
+  content: string;
+}
+
+export type AppEvent =
+  | InitEvent
+  | ThinkingEvent
+  | TextEvent
+  | ToolUseEvent
+  | ToolResultEvent
+  | ResultEvent
+  | ErrorEvent
+  | DoneEvent
+  | TurnDoneEvent
+  | CancelledEvent
+  | AskUserEvent
+  | ElicitationEvent
+  | TeamCreatedEvent
+  | ConversationStatusEvent
+  | ConversationDoneEvent
+  | ConversationMessageEvent;
 
 export interface StreamEvent {
   id: number;

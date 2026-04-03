@@ -89,10 +89,10 @@ async function runQuery(
   try {
     for await (const appEvent of result.stream) {
       if (appEvent.type === "init" && appEvent.sessionId && !session.agentSessionId) {
-        session.agentSessionId = appEvent.sessionId as string;
+        session.agentSessionId = appEvent.sessionId;
       }
       if (appEvent.type === "error") {
-        errorMessages.push({ id: crypto.randomUUID(), role: "error", content: appEvent.text as string });
+        errorMessages.push({ id: crypto.randomUUID(), role: "error", content: appEvent.text });
       }
       emit(sessionId, appEvent);
     }
@@ -166,13 +166,20 @@ export async function runSubQuery(
     parentController?.signal.addEventListener("abort", onParentAbort);
 
     const errorMessages: Array<{ id: string; role: "error"; content: string }> = [];
-    const emitTagged = (data: AppEvent) => emit(sessionId, { ...data, conversationId });
+    const emitTagged = (data: AppEvent) => {
+      if ("conversationId" in data) {
+        emit(sessionId, data);
+      } else {
+        // Tag events that extend BaseEvent with the conversation scope
+        emit(sessionId, { ...data, conversationId } as AppEvent);
+      }
+    };
 
     const resolvedCwd = getSessionCwd(session);
 
     const hooks: InteractionHooks = {
       onAskUser: async (questions) => {
-        emitTagged({ type: "ask_user", questions } as AppEvent);
+        emitTagged({ type: "ask_user", questions, conversationId });
         return createPendingAskUser(sessionId, opts.source ?? "extension", conversationId);
       },
       onElicitation: async (request) => {
@@ -180,10 +187,11 @@ export async function runSubQuery(
         emitTagged({
           type: "elicitation",
           elicitationId,
+          conversationId,
           serverName: request.serverName,
           message: request.message,
           schema: request.schema,
-        } as AppEvent);
+        });
         return createPendingElicitation(elicitationId);
       },
     };
@@ -206,17 +214,17 @@ export async function runSubQuery(
     try {
       for await (const appEvent of result.stream) {
         if (appEvent.type === "error") {
-          errorMessages.push({ id: crypto.randomUUID(), role: "error", content: appEvent.text as string });
+          errorMessages.push({ id: crypto.randomUUID(), role: "error", content: appEvent.text });
         }
         emitTagged(appEvent);
       }
     } catch (err: any) {
       const aborted = abortController.signal.aborted || err?.name === "AbortError";
       if (aborted) {
-        emitTagged({ type: "cancelled" } as AppEvent);
+        emitTagged({ type: "cancelled", conversationId });
       } else {
         const text = err.message || String(err);
-        emitTagged({ type: "error", text } as AppEvent);
+        emitTagged({ type: "error", text, conversationId });
         errorMessages.push({ id: crypto.randomUUID(), role: "error", content: text });
       }
     }
@@ -241,7 +249,7 @@ export async function runSubQuery(
     conversation.messages.push(...errorMessages);
     await saveSession(session);
 
-    emitTagged({ type: "done" } as AppEvent);
+    emitTagged({ type: "done", conversationId });
     cleanupConversation(sessionId, conversationId);
   } finally {
     release();

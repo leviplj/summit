@@ -65,7 +65,7 @@ export const claudeCodeProvider: AgentProvider = {
         const events = translateMessage(message, state);
         for (const event of events) {
           if (event.type === "init" && event.sessionId) {
-            capturedSessionId = event.sessionId as string;
+            capturedSessionId = event.sessionId;
           }
           yield event;
         }

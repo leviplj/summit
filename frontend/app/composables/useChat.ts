@@ -1,5 +1,5 @@
 import type { AppEvent } from "summit-types";
-import type { ClientSession, ClientConversation } from "./useSessionStore";
+import type { ClientSession } from "./useSessionStore";
 
 export type { SessionStatus } from "summit-types";
 
@@ -41,8 +41,7 @@ export function useChat() {
   function handleEvent(session: ClientSession, event: AppEvent) {
     // Team lifecycle: team_created creates conversation tabs
     if (event.type === "team_created") {
-      const roster = event.teammates as Array<{ id: string; role: string }>;
-      for (const t of roster) {
+      for (const t of event.teammates) {
         store.ensureConversation(session.id, t.id, t.role);
       }
       // Set active conversation to lead (orchestrator view)
@@ -56,34 +55,31 @@ export function useChat() {
     if (event.type === "conversation_status") {
       const conv = store.ensureConversation(
         session.id,
-        event.conversationId as string,
-        event.conversationRole as string,
+        event.conversationId,
+        event.conversationRole,
       );
-      if (conv) conv.status = event.status as ClientConversation["status"];
+      if (conv) conv.status = event.status;
       return;
     }
 
     if (event.type === "conversation_done") {
       const conv = store.ensureConversation(
         session.id,
-        event.conversationId as string,
-        event.conversationRole as string,
+        event.conversationId,
+        event.conversationRole,
       );
       if (conv) conv.status = "done";
       return;
     }
 
     if (event.type === "conversation_message") {
-      const from = event.from as string;
-      const to = event.to as string;
-      const content = event.content as string;
-      for (const id of [from, to]) {
+      for (const id of [event.from, event.to]) {
         const conv = session.conversations.find((c) => c.id === id);
         if (conv) {
           conv.messages.push({
             id: uid(),
             role: "assistant",
-            content: `**${from}** → **${to}**: ${content}`,
+            content: `**${event.from}** → **${event.to}**: ${event.content}`,
           });
         }
       }
@@ -91,7 +87,7 @@ export function useChat() {
     }
 
     // Determine target conversation
-    const conversationId = (event.conversationId as string) || "lead";
+    const conversationId = ("conversationId" in event && event.conversationId) || "lead";
     const conv = store.ensureConversation(session.id, conversationId);
     if (!conv) return;
 
@@ -101,7 +97,7 @@ export function useChat() {
 
     switch (event.type) {
       case "init":
-        if (event.model) model.value = event.model as string;
+        if (event.model) model.value = event.model;
         break;
 
       case "thinking":
@@ -116,7 +112,7 @@ export function useChat() {
           conv.events.push({
             id: uid(),
             type: "tool_use",
-            label: formatToolUse(event.tool as string, event.input as Record<string, any>),
+            label: formatToolUse(event.tool, event.input),
           });
         }
         break;
@@ -125,8 +121,8 @@ export function useChat() {
         conv.events.push({
           id: uid(),
           type: "tool_result",
-          label: (event.content as string) || (event.is_error ? "Error" : "Done"),
-          isError: event.is_error as boolean,
+          label: event.content || (event.is_error ? "Error" : "Done"),
+          isError: event.is_error,
         });
         break;
 
@@ -134,7 +130,7 @@ export function useChat() {
         if (!state) break;
         if (isLead) session.status = "streaming";
         conv.events = conv.events.filter((e) => e.type !== "thinking");
-        state.text += event.text as string;
+        state.text += event.text;
         conv.streamText = state.text;
         const existing = conv.messages.find((m) => m.id === state.msgId);
         if (existing) {
@@ -150,11 +146,11 @@ export function useChat() {
         if (!event.is_error && event.text) {
           const m = conv.messages.find((m) => m.id === state.msgId);
           if (m) {
-            m.content = event.text as string;
+            m.content = event.text;
             m.meta = {
-              duration_ms: event.duration_ms as number,
-              cost_usd: event.cost_usd as number,
-              output_tokens: event.output_tokens as number,
+              duration_ms: event.duration_ms,
+              cost_usd: event.cost_usd,
+              output_tokens: event.output_tokens,
             };
           }
         }
@@ -192,7 +188,7 @@ export function useChat() {
       case "ask_user":
         session.status = "ask_user";
         conv.events = conv.events.filter((e) => e.type !== "thinking");
-        conv.askUser = (event.questions as any[]) || [];
+        conv.askUser = event.questions || [];
         break;
 
       case "elicitation":
@@ -200,10 +196,10 @@ export function useChat() {
           session.status = "elicitation";
           conv.events = conv.events.filter((e) => e.type !== "thinking");
           session.elicitation = {
-            id: event.elicitationId as string,
-            serverName: event.serverName as string,
-            message: event.message as string,
-            schema: event.schema as Record<string, unknown> | undefined,
+            id: event.elicitationId,
+            serverName: event.serverName,
+            message: event.message,
+            schema: event.schema,
           };
         }
         break;
@@ -218,7 +214,7 @@ export function useChat() {
 
       case "error":
         conv.events = conv.events.filter((e) => e.type !== "thinking");
-        conv.messages.push({ id: uid(), role: "error", content: event.text as string });
+        conv.messages.push({ id: uid(), role: "error", content: event.text });
         if (isLead) {
           session.loading = false;
           session.status = "error";
@@ -241,7 +237,7 @@ export function useChat() {
         if (!session) return;
 
         // Ensure stream state exists for conversation-scoped events
-        const conversationId = (event.conversationId as string) || "lead";
+        const conversationId = ("conversationId" in event && event.conversationId) || "lead";
         const csk = streamKey(sessionId, conversationId);
         if (!streamState.has(csk) && conversationId !== "lead") {
           streamState.set(csk, { msgId: uid(), text: "" });
