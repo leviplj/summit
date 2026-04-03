@@ -1,7 +1,7 @@
-import type { AppEvent } from "~~/shared/types";
+import type { AppEvent } from "summit-types";
 import type { ClientSession } from "./useSessionStore";
 
-export type { SessionStatus } from "~~/shared/types";
+export type { SessionStatus } from "summit-types";
 
 const TOOL_LABELS: Record<string, (input: Record<string, any>) => string> = {
   Read: (i) => `Reading ${i.file_path || "file"}`,

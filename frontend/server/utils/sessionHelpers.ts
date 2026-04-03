@@ -1,4 +1,4 @@
-import type { StoredSession } from "~~/shared/types";
+import type { StoredSession } from "summit-types";
 
 export function getSessionCwd(session: StoredSession): string {
   const wts = session.worktrees;

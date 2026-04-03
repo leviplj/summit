@@ -1,4 +1,4 @@
-import type { AppEvent } from "~~/shared/types";
+import type { AppEvent } from "summit-types";
 import { EventStream } from "./EventStream";
 
 export interface StreamEvent {

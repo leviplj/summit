@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AskUserQuestion } from "~~/shared/types";
+import type { AskUserQuestion } from "summit-types";
 
 const props = defineProps<{
   questions: AskUserQuestion[];

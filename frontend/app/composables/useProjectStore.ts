@@ -1,4 +1,4 @@
-import type { Project } from "~~/shared/types";
+import type { Project } from "summit-types";
 
 export function useProjectStore() {
   const projects = ref<Project[]>([]);

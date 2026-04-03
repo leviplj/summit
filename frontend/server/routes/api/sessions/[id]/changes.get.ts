@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import type { FileChange } from "~~/shared/types";
+import type { FileChange } from "summit-types";
 
 const exec = promisify(execFile);
 

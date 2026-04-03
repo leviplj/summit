@@ -3,7 +3,7 @@ import { emit, initQuery, finalize } from "./eventBus";
 import { createPendingAskUser, createPendingElicitation, cleanupSession } from "./interactions";
 import { getSessionCwd, getSessionAdditionalDirs } from "./sessionHelpers";
 import { buildSystemPrompt } from "~~/server/providers/claude-code/prompt";
-import type { InteractionHooks } from "~~/server/providers/types";
+import type { InteractionHooks } from "summit-types";
 
 export async function startQuery(sessionId: string, text: string, source: string = "web") {
   const abortController = initQuery(sessionId, source);

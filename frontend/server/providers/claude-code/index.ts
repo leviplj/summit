@@ -1,7 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createStreamState, translateMessage } from "./events";
 import { ALL_MODELS } from "./models";
-import type { AgentProvider, QueryContext, InteractionHooks, QueryResult, ProviderCapability } from "../types";
+import type { AgentProvider, QueryContext, InteractionHooks, QueryResult, ProviderCapability } from "summit-types";
 
 const ALL_CAPABILITIES: ProviderCapability[] = [
   "resume", "elicitation", "ask_user", "tool_streaming", "mcp_tools", "system_prompt",

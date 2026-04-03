@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { X, Plus, Trash2, FolderGit2 } from "lucide-vue-next";
-import type { Project } from "~~/shared/types";
+import type { Project } from "summit-types";
 
 const props = defineProps<{
   project?: Project | null;

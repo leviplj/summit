@@ -3,7 +3,7 @@ import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { access } from "fs/promises";
-import type { Project } from "~~/shared/types";
+import type { Project } from "summit-types";
 
 export type { Project };
 

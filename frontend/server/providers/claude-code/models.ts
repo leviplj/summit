@@ -1,4 +1,4 @@
-import type { ProviderModel } from "../types";
+import type { ProviderModel } from "summit-types";
 
 export const LATEST_MODELS: ProviderModel[] = [
   { id: "claude-opus-4-6", label: "Opus 4.6", default: true },

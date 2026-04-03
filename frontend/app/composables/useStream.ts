@@ -1,4 +1,4 @@
-import type { AppEvent } from "~~/shared/types";
+import type { AppEvent } from "summit-types";
 
 export function useStream() {
   function connect(

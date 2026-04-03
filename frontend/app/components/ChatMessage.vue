@@ -4,7 +4,7 @@ import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.min.css";
-import type { ChatMessage } from "~~/shared/types";
+import type { ChatMessage } from "summit-types";
 
 const props = defineProps<{ message: ChatMessage }>();
 

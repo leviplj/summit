@@ -1,4 +1,4 @@
-import type { AppEvent } from "~~/shared/types";
+import type { AppEvent } from "summit-types";
 
 export interface AgentStreamState {
   currentToolName: string | null;

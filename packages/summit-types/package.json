@@ -1,0 +1,13 @@
+{
+  "name": "summit-types",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "files": ["src"],
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

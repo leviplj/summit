@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Plus, SendHorizontal, Square, Trash2, GitBranch, FileCode, Sun, Moon, Monitor, Search, X, MessageSquareText, FolderGit2, Pencil } from "lucide-vue-next";
-import type { SessionStatus, Project } from "~~/shared/types";
+import type { SessionStatus, Project } from "summit-types";
 import ChatMessage from "~/components/ChatMessage.vue";
 import ElicitationForm from "~/components/ElicitationForm.vue";
 import AskUserQuestions from "~/components/AskUserQuestions.vue";

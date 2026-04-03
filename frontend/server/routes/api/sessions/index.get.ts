@@ -1,4 +1,4 @@
-import type { SessionListItem } from "~~/shared/types";
+import type { SessionListItem } from "summit-types";
 
 export default defineEventHandler(async (event): Promise<SessionListItem[]> => {
   const query = getQuery(event);

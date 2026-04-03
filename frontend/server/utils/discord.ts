@@ -1,5 +1,5 @@
 import type { Client, TextChannel } from "discord.js";
-import type { AskUserQuestion, StoredSession } from "~~/shared/types";
+import type { AskUserQuestion, StoredSession } from "summit-types";
 
 export interface DiscordMeta {
   threadId: string;

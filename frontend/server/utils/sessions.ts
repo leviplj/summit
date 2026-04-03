@@ -1,6 +1,6 @@
 import { readFile, writeFile, readdir, unlink, mkdir } from "fs/promises";
 import { join } from "path";
-import type { StoredSession } from "~~/shared/types";
+import type { StoredSession } from "summit-types";
 import { emitGlobal } from "./eventBus";
 
 export type { StoredSession };

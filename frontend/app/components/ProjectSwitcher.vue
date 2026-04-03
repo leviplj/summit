@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronDown, Plus, Settings, FolderGit2 } from "lucide-vue-next";
-import type { Project } from "~~/shared/types";
+import type { Project } from "summit-types";
 
 const props = defineProps<{
   projects: Project[];

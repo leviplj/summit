@@ -1,4 +1,4 @@
-import type { StoredSession } from "~~/shared/types";
+import type { StoredSession } from "summit-types";
 
 export function buildSystemPrompt(session: StoredSession, extraContext?: string): string {
   let prompt = `IMPORTANT: Your working directory is current working directory.

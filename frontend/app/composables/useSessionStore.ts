@@ -1,4 +1,4 @@
-import type { ChatMessage, SessionStatus, SessionListItem, ElicitationPayload, AskUserQuestion } from "~~/shared/types";
+import type { ChatMessage, SessionStatus, SessionListItem, ElicitationPayload, AskUserQuestion } from "summit-types";
 
 export interface ClientSession {
   id: string;

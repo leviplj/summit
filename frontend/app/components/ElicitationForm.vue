@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ElicitationPayload } from "~~/shared/types";
+import type { ElicitationPayload } from "summit-types";
 
 const props = defineProps<{
   elicitation: ElicitationPayload;

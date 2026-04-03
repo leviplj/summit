@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FileCode, FilePlus, FileMinus, FileEdit, RefreshCw, ArrowLeft, GitMerge, Circle, Sparkles, Loader2, ChevronDown } from "lucide-vue-next";
-import type { FileChange } from "~~/shared/types";
+import type { FileChange } from "summit-types";
 
 const props = defineProps<{
   sessionId: string;

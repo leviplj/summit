@@ -17,9 +17,9 @@ import {
   makeChannelMeta,
   formatResultForDiscord,
 } from "~~/server/utils/discord";
-import type { AskUserQuestion } from "~~/shared/types";
-import type { StoredSession } from "~~/shared/types";
-import type { ExtensionAPI, ExtensionFactory } from "../types";
+import type { AskUserQuestion } from "summit-types";
+import type { StoredSession } from "summit-types";
+import type { ExtensionAPI, ExtensionFactory } from "summit-types";
 
 // Track threads with pending ask_user questions
 // Maps threadId → { sessionId, total question count, collected answers }
@@ -49,6 +49,7 @@ const extension: ExtensionFactory = (api) => {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMessageReactions,
     ],
   });
 
@@ -171,9 +172,9 @@ async function handleChannelMessage(api: ExtensionAPI, message: Message) {
   await api.sessions.save(session);
   setThreadSession(thread.id, id);
 
-  await thread.send("On it.");
+  await message.react("👀").catch(logSendError);
   await api.queries.start(id, message.content, "discord");
-  subscribeToQuery(api, id, thread);
+  subscribeToQuery(api, id, thread, message);
 }
 
 // --- Thread reply: resolve ask_user or start follow-up ---
@@ -194,18 +195,18 @@ async function handleThreadReply(api: ExtensionAPI, message: Message) {
 
   const activeQuery = api.queries.getActive(sessionId);
   if (activeQuery && !activeQuery.done) {
-    await (message.channel as ThreadChannel).send("Still working on the previous request.");
+    await message.react("⏳").catch(logSendError);
     return;
   }
 
-  await (message.channel as ThreadChannel).send("On it.");
+  await message.react("👀").catch(logSendError);
   await api.queries.start(sessionId, message.content, "discord");
-  subscribeToQuery(api, sessionId, message.channel as ThreadChannel);
+  subscribeToQuery(api, sessionId, message.channel as ThreadChannel, message);
 }
 
 // --- Subscribe to query events and post bookends ---
 
-async function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: ThreadChannel) {
+async function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: ThreadChannel, originMessage?: Message) {
   const stream = api.events.subscribe(sessionId, 0);
   if (!stream) return;
 
@@ -219,6 +220,7 @@ async function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: Th
           break;
 
         case "error":
+          if (originMessage) originMessage.react("❌").catch(logSendError);
           thread.send(`Error: ${data.text ?? "unknown error"}`).catch(logSendError);
           break;
 
@@ -241,6 +243,7 @@ async function subscribeToQuery(api: ExtensionAPI, sessionId: string, thread: Th
           break;
 
         case "done":
+          if (originMessage) originMessage.react("✅").catch(logSendError);
           return;
       }
     }
