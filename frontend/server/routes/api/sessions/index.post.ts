@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
     worktreePath: wtPath,
     branch,
     worktrees,
-    messages: [],
+    conversations: [{ id: "lead", role: "lead", status: "idle", messages: [] }],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

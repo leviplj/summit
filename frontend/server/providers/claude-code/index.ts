@@ -42,6 +42,7 @@ export const claudeCodeProvider: AgentProvider = {
         ...(ctx.model ? { model: ctx.model } : {}),
         ...(ctx.mcpServers ? { mcpServers: ctx.mcpServers as any } : {}),
         ...(ctx.allowedTools ? { allowedTools: ctx.allowedTools } : {}),
+        ...(ctx.disallowedTools ? { disallowedTools: ctx.disallowedTools } : {}),
         canUseTool: async (toolName: string, input: any) => {
           if (toolName === "AskUserQuestion") {
             const answers = await hooks.onAskUser(input.questions);

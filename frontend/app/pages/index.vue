@@ -10,6 +10,7 @@ import KeyboardShortcutsHelp from "~/components/KeyboardShortcutsHelp.vue";
 import HighlightMatch from "~/components/HighlightMatch.vue";
 import ProjectSwitcher from "~/components/ProjectSwitcher.vue";
 import ProjectConfigDialog from "~/components/ProjectConfigDialog.vue";
+import TeamTabBar from "~/components/TeamTabBar.vue";
 
 const statusConfig: Record<SessionStatus, { color: string; pulse: boolean; label: string }> = {
   idle: { color: "bg-zinc-500", pulse: false, label: "Idle" },
@@ -26,6 +27,7 @@ const {
   sessions,
   activeSessionId,
   activeSession,
+  activeConversation,
   messages,
   events,
   loading,
@@ -97,6 +99,11 @@ const branchBadges = computed(() => {
   return [];
 });
 
+// Display data comes from the active conversation (computed in store)
+const displayMessages = computed(() => activeConversation.value?.messages ?? []);
+const displayEvents = computed(() => activeConversation.value?.events ?? []);
+const displayAskUser = computed(() => activeConversation.value?.askUser ?? null);
+
 const { helpOpen, shortcuts } = useKeyboardShortcuts({
   sidebarOpen,
   changesOpen,
@@ -135,7 +142,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 watch(
-  [() => messages.value.length, () => messages.value.at(-1)?.content, () => events.value.length, () => elicitation.value, () => askUser.value],
+  [() => displayMessages.value.length, () => displayMessages.value.at(-1)?.content, () => displayEvents.value.length, () => elicitation.value, () => displayAskUser.value],
   () => {
     nextTick(() => {
       messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: "smooth" });
@@ -468,92 +475,102 @@ onMounted(() => {
       </div>
 
       <!-- Messages -->
-      <div v-else ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
-        <div class="mx-auto flex max-w-3xl flex-col gap-4">
-          <div
-            v-if="messages.length === 0 && !loading"
-            class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
-          >
-            {{ loaded ? 'Send a message to start a new chat' : 'Loading…' }}
-          </div>
+      <div v-else class="flex flex-1 flex-col overflow-hidden">
+        <!-- Conversation tabs -->
+        <TeamTabBar
+          v-if="activeSession && activeSession.conversations.length > 1"
+          :conversations="activeSession.conversations"
+          :active-id="activeSession.activeConversationId"
+          @select="activeSession!.activeConversationId = $event"
+        />
 
-          <ChatMessage v-for="msg in messages" :key="msg.id" :message="msg" />
+        <div ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-6">
+          <div class="mx-auto flex max-w-3xl flex-col gap-4">
+            <div
+              v-if="displayMessages.length === 0 && !loading"
+              class="flex flex-1 items-center justify-center pt-32 text-muted-foreground"
+            >
+              {{ loaded ? 'Send a message to start a new chat' : 'Loading…' }}
+            </div>
 
-          <!-- Tool events -->
-          <div v-if="events.length" class="flex justify-start">
-            <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
-              <div
-                v-for="ev in events"
-                :key="ev.id"
-                class="flex items-center gap-2 text-xs"
-                :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
-              >
-                <span v-if="ev.type === 'thinking'" class="thinking-dots">
+            <ChatMessage v-for="msg in displayMessages" :key="msg.id" :message="msg" />
+
+            <!-- Tool events -->
+            <div v-if="displayEvents.length" class="flex justify-start">
+              <div class="max-w-[80%] space-y-1 rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
+                <div
+                  v-for="ev in displayEvents"
+                  :key="ev.id"
+                  class="flex items-center gap-2 text-xs"
+                  :class="ev.isError ? 'text-red-400' : 'text-muted-foreground'"
+                >
+                  <span v-if="ev.type === 'thinking'" class="thinking-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                  <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
+                  <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
+                  <span v-else class="text-green-400">&#10003;</span>
+                  <span class="truncate">{{ ev.label }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- AskUserQuestion -->
+            <div v-if="displayAskUser" class="flex justify-start">
+              <AskUserQuestions
+                :questions="displayAskUser"
+                @answer="(answers) => respondAskUser(answers, activeSession?.activeConversationId)"
+              />
+            </div>
+
+            <!-- Elicitation form -->
+            <div v-if="elicitation" class="flex justify-start">
+              <ElicitationForm
+                :elicitation="elicitation"
+                @respond="(action, content) => respondElicitation(action, content)"
+              />
+            </div>
+
+            <div v-if="loading && !displayEvents.length && !elicitation && !displayAskUser" class="flex justify-start">
+              <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
+                <span class="thinking-dots text-muted-foreground">
                   <span>.</span><span>.</span><span>.</span>
                 </span>
-                <span v-else-if="ev.type === 'tool_use'" class="text-primary">&#9654;</span>
-                <span v-else-if="ev.isError" class="text-red-400">&#10007;</span>
-                <span v-else class="text-green-400">&#10003;</span>
-                <span class="truncate">{{ ev.label }}</span>
               </div>
             </div>
           </div>
-
-          <!-- AskUserQuestion -->
-          <div v-if="askUser" class="flex justify-start">
-            <AskUserQuestions
-              :questions="askUser"
-              @answer="(answers) => respondAskUser(answers)"
-            />
-          </div>
-
-          <!-- Elicitation form -->
-          <div v-if="elicitation" class="flex justify-start">
-            <ElicitationForm
-              :elicitation="elicitation"
-              @respond="(action, content) => respondElicitation(action, content)"
-            />
-          </div>
-
-          <div v-if="loading && !events.length && !elicitation && !askUser" class="flex justify-start">
-            <div class="rounded-xl rounded-bl-sm border border-border bg-card px-4 py-3">
-              <span class="thinking-dots text-muted-foreground">
-                <span>.</span><span>.</span><span>.</span>
-              </span>
-            </div>
-          </div>
         </div>
-      </div>
 
-      <!-- Input -->
-      <div v-if="!showProjectDetails" class="border-t border-border px-4 py-3">
-        <div class="mx-auto flex max-w-3xl gap-2">
-          <textarea
-            ref="inputEl"
-            v-model="input"
-            :disabled="loading"
-            rows="1"
-            placeholder="Message Claude..."
-            class="flex-1 resize-none rounded-lg border border-input bg-secondary px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-            @keydown="handleKeydown"
-          />
-          <button
-            v-if="loading"
-            :disabled="cancelling"
-            class="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
-            title="Stop"
-            @click="handleCancel"
-          >
-            <Square class="h-4 w-4" />
-          </button>
-          <button
-            v-else
-            :disabled="!input.trim()"
-            class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            @click="handleSend"
-          >
-            <SendHorizontal class="h-4 w-4" />
-          </button>
+        <!-- Input -->
+        <div class="border-t border-border px-4 py-3">
+          <div class="mx-auto flex max-w-3xl gap-2">
+            <textarea
+              ref="inputEl"
+              v-model="input"
+              :disabled="loading"
+              rows="1"
+              placeholder="Message Claude..."
+              class="flex-1 resize-none rounded-lg border border-input bg-secondary px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+              @keydown="handleKeydown"
+            />
+            <button
+              v-if="loading"
+              :disabled="cancelling"
+              class="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+              title="Stop"
+              @click="handleCancel"
+            >
+              <Square class="h-4 w-4" />
+            </button>
+            <button
+              v-else
+              :disabled="!input.trim()"
+              class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              @click="handleSend"
+            >
+              <SendHorizontal class="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

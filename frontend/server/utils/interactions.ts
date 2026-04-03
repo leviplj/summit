@@ -15,8 +15,12 @@ interface PendingElicitation {
 const pendingAskUser = new Map<string, PendingAskUser>();
 const pendingElicitations = new Map<string, PendingElicitation>();
 
-export function resolveAskUser(sessionId: string, answers: Record<string, string>, askId?: string): boolean {
-  const key = askId ? `${sessionId}:${askId}` : sessionId;
+function askUserKey(sessionId: string, conversationId?: string): string {
+  return `${sessionId}:${conversationId ?? "lead"}`;
+}
+
+export function resolveAskUser(sessionId: string, answers: Record<string, string>, conversationId?: string): boolean {
+  const key = askUserKey(sessionId, conversationId);
   const pending = pendingAskUser.get(key);
   if (!pending) return false;
   pending.resolve(answers);
@@ -35,8 +39,8 @@ export function resolveElicitation(
   return true;
 }
 
-export function createPendingAskUser(sessionId: string, source: string, askId?: string): Promise<Record<string, string>> {
-  const key = askId ? `${sessionId}:${askId}` : sessionId;
+export function createPendingAskUser(sessionId: string, source: string, conversationId?: string): Promise<Record<string, string>> {
+  const key = askUserKey(sessionId, conversationId);
   return new Promise<Record<string, string>>((resolve) => {
     pendingAskUser.set(key, { resolve, source });
   });
@@ -48,19 +52,20 @@ export function createPendingElicitation(elicitationId: string): Promise<Elicita
   });
 }
 
-export function getAskUserSource(sessionId: string, askId?: string): string | undefined {
-  const key = askId ? `${sessionId}:${askId}` : sessionId;
+export function getAskUserSource(sessionId: string, conversationId?: string): string | undefined {
+  const key = askUserKey(sessionId, conversationId);
   return pendingAskUser.get(key)?.source;
 }
 
 export function cleanupSession(sessionId: string) {
-  pendingAskUser.delete(sessionId);
-  // Also clean up any composite keys from sub-queries (sessionId:askId)
   for (const key of pendingAskUser.keys()) {
-    if (key.startsWith(`${sessionId}:`)) {
+    if (key === sessionId || key.startsWith(`${sessionId}:`)) {
       pendingAskUser.delete(key);
     }
   }
-  // Note: elicitations are keyed by elicitationId, not sessionId.
-  // They are cleaned up when the query finishes naturally or by abort.
+}
+
+/** Clean up only a specific conversation's pending entries, not the whole session. */
+export function cleanupConversation(sessionId: string, conversationId: string) {
+  pendingAskUser.delete(askUserKey(sessionId, conversationId));
 }

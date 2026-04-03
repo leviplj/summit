@@ -1,6 +1,7 @@
 import { getProvider } from "~~/server/providers/registry";
-import { emit, initQuery, finalize, fireBeforeQueryHooks, holdStream, getActiveQuery, getAbortController } from "./eventBus";
-import { createPendingAskUser, createPendingElicitation, cleanupSession } from "./interactions";
+import { emit, initQuery, finalize, fireBeforeQueryHooks, holdStream, getActiveQuery, getAbortController, hasStreamHolds, onStreamFullyReleased } from "./eventBus";
+import type { BeforeQueryContext } from "summit-types";
+import { createPendingAskUser, createPendingElicitation, cleanupSession, cleanupConversation } from "./interactions";
 import { getSessionCwd, getSessionAdditionalDirs } from "./sessionHelpers";
 import { buildSystemPrompt } from "~~/server/providers/claude-code/prompt";
 import type { AppEvent, InteractionHooks } from "summit-types";
@@ -15,9 +16,14 @@ export async function startQuery(sessionId: string, text: string, source: string
     return;
   }
 
-  await fireBeforeQueryHooks({ sessionId, prompt: text, source });
+  const hookCtx: BeforeQueryContext = { sessionId, prompt: text, source };
+  await fireBeforeQueryHooks(hookCtx);
 
-  runQuery(session, text, sessionId, abortController).catch((err) => {
+  // Clear non-lead conversations at query start
+  session.conversations = session.conversations.filter((c) => c.id === "lead");
+  const lead = session.conversations[0];
+
+  runQuery(session, lead, text, sessionId, abortController, hookCtx).catch((err) => {
     emit(sessionId, { type: "error", text: String(err?.message ?? err) });
     finalize(sessionId);
   });
@@ -25,16 +31,18 @@ export async function startQuery(sessionId: string, text: string, source: string
 
 async function runQuery(
   session: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>,
+  lead: NonNullable<Awaited<ReturnType<typeof getStoredSession>>>["conversations"][0],
   text: string,
   sessionId: string,
   abortController: AbortController,
+  hookCtx: BeforeQueryContext,
 ) {
   const provider = getProvider(session.provider ?? "claude-code");
   const errorMessages: Array<{ id: string; role: "error"; content: string }> = [];
 
-  // Persist user message early so external consumers (web UI via global events) see it immediately
-  session.messages.push({ id: crypto.randomUUID(), role: "user", content: text });
-  if (session.messages.filter((m) => m.role === "user").length === 1) {
+  // Persist user message early so external consumers see it immediately
+  lead.messages.push({ id: crypto.randomUUID(), role: "user", content: text });
+  if (lead.messages.filter((m) => m.role === "user").length === 1) {
     session.title = text.length > 40 ? text.slice(0, 40) + "…" : text;
   }
   await saveSession(session);
@@ -45,7 +53,7 @@ async function runQuery(
   const hooks: InteractionHooks = {
     onAskUser: async (questions) => {
       emit(sessionId, { type: "ask_user", questions });
-      return createPendingAskUser(sessionId, "web");
+      return createPendingAskUser(sessionId, "web", "lead");
     },
     onElicitation: async (request) => {
       const elicitationId = crypto.randomUUID();
@@ -60,7 +68,10 @@ async function runQuery(
     },
   };
 
-  const systemPromptSuffix = buildSystemPrompt(session);
+  let systemPromptSuffix = buildSystemPrompt(session);
+  if (hookCtx?.systemPromptSuffix) {
+    systemPromptSuffix = systemPromptSuffix + "\n\n" + hookCtx.systemPromptSuffix;
+  }
 
   const result = provider.runQuery({
     prompt: text,
@@ -70,6 +81,9 @@ async function runQuery(
     model: session.model,
     resumeSessionId: session.agentSessionId,
     abortSignal: abortController.signal,
+    ...(hookCtx?.mcpServers ? { mcpServers: hookCtx.mcpServers } : {}),
+    ...(hookCtx?.allowedTools ? { allowedTools: hookCtx.allowedTools } : {}),
+    ...(hookCtx?.disallowedTools ? { disallowedTools: hookCtx.disallowedTools } : {}),
   }, hooks);
 
   try {
@@ -93,33 +107,44 @@ async function runQuery(
     }
   }
 
-  // Persist assistant response and errors
+  // Persist assistant response and errors to lead conversation
   const assistantText = result.getAssistantText();
   if (assistantText) {
-    session.messages.push({
+    lead.messages.push({
       id: crypto.randomUUID(),
       role: "assistant",
       content: assistantText,
       ...(result.getAssistantMeta() ? { meta: result.getAssistantMeta()! } : {}),
     });
   }
-  session.messages.push(...errorMessages);
+  lead.messages.push(...errorMessages);
 
   await saveSession(session);
-  emit(sessionId, { type: "done" });
-  cleanupSession(sessionId);
-  finalize(sessionId);
+
+  // If teammates are still active (stream holds > 0), emit turn_done
+  // instead of done — the stream stays open for teammate events.
+  if (hasStreamHolds(sessionId)) {
+    emit(sessionId, { type: "turn_done" });
+    onStreamFullyReleased(sessionId, () => {
+      emit(sessionId, { type: "done" });
+      finalize(sessionId);
+    });
+  } else {
+    emit(sessionId, { type: "done" });
+    cleanupSession(sessionId);
+    finalize(sessionId);
+  }
 }
 
 /**
  * Run a sub-query within an already-active session.
  * Bypasses initQuery() — shares the existing EventStream.
- * Tags all events with agentId. Auto-holds/releases the stream.
+ * Tags all events with conversationId. Auto-holds/releases the stream.
  */
 export async function runSubQuery(
   sessionId: string,
   prompt: string,
-  opts: { agentId: string; source?: string },
+  opts: { conversationId: string; source?: string; mcpServers?: Record<string, unknown>; systemPrompt?: string; model?: string },
 ): Promise<void> {
   const aq = getActiveQuery(sessionId);
   if (!aq) throw new Error(`No active query for session ${sessionId}`);
@@ -132,7 +157,7 @@ export async function runSubQuery(
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
     const provider = getProvider(session.provider ?? "claude-code");
-    const { agentId } = opts;
+    const { conversationId } = opts;
 
     // Link to parent's abort signal so cancelling the session propagates
     const abortController = new AbortController();
@@ -140,15 +165,15 @@ export async function runSubQuery(
     const onParentAbort = () => abortController.abort();
     parentController?.signal.addEventListener("abort", onParentAbort);
 
-    const errorMessages: Array<{ id: string; role: "error"; content: string; agentId: string }> = [];
-    const emitTagged = (data: AppEvent) => emit(sessionId, { ...data, agentId });
+    const errorMessages: Array<{ id: string; role: "error"; content: string }> = [];
+    const emitTagged = (data: AppEvent) => emit(sessionId, { ...data, conversationId });
 
     const resolvedCwd = getSessionCwd(session);
 
     const hooks: InteractionHooks = {
       onAskUser: async (questions) => {
         emitTagged({ type: "ask_user", questions } as AppEvent);
-        return createPendingAskUser(sessionId, opts.source ?? "extension", agentId);
+        return createPendingAskUser(sessionId, opts.source ?? "extension", conversationId);
       },
       onElicitation: async (request) => {
         const elicitationId = crypto.randomUUID();
@@ -163,22 +188,25 @@ export async function runSubQuery(
       },
     };
 
-    const systemPromptSuffix = buildSystemPrompt(session);
+    const systemPromptSuffix = opts.systemPrompt
+      ? `${buildSystemPrompt(session)}\n\n${opts.systemPrompt}`
+      : buildSystemPrompt(session);
 
     const result = provider.runQuery({
       prompt,
       cwd: resolvedCwd,
       additionalDirs: getSessionAdditionalDirs(session),
       systemPromptSuffix,
-      model: session.model,
+      model: opts.model ?? session.model,
       resumeSessionId: null, // sub-queries don't resume
       abortSignal: abortController.signal,
+      ...(opts.mcpServers ? { mcpServers: opts.mcpServers } : {}),
     }, hooks);
 
     try {
       for await (const appEvent of result.stream) {
         if (appEvent.type === "error") {
-          errorMessages.push({ id: crypto.randomUUID(), role: "error", content: appEvent.text as string, agentId });
+          errorMessages.push({ id: crypto.randomUUID(), role: "error", content: appEvent.text as string });
         }
         emitTagged(appEvent);
       }
@@ -189,28 +217,32 @@ export async function runSubQuery(
       } else {
         const text = err.message || String(err);
         emitTagged({ type: "error", text } as AppEvent);
-        errorMessages.push({ id: crypto.randomUUID(), role: "error", content: text, agentId });
+        errorMessages.push({ id: crypto.randomUUID(), role: "error", content: text });
       }
     }
 
     parentController?.signal.removeEventListener("abort", onParentAbort);
 
-    // Persist agent's messages atomically
+    // Persist agent's messages to conversation
+    let conversation = session.conversations.find((c) => c.id === conversationId);
+    if (!conversation) {
+      conversation = { id: conversationId, role: conversationId, status: "working", messages: [] };
+      session.conversations.push(conversation);
+    }
     const assistantText = result.getAssistantText();
     if (assistantText) {
-      session.messages.push({
+      conversation.messages.push({
         id: crypto.randomUUID(),
         role: "assistant",
         content: assistantText,
-        agentId,
         ...(result.getAssistantMeta() ? { meta: result.getAssistantMeta()! } : {}),
       });
     }
-    session.messages.push(...errorMessages);
+    conversation.messages.push(...errorMessages);
     await saveSession(session);
 
     emitTagged({ type: "done" } as AppEvent);
-    cleanupSession(sessionId);
+    cleanupConversation(sessionId, conversationId);
   } finally {
     release();
   }

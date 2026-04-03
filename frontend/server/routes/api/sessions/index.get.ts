@@ -23,7 +23,7 @@ export default defineEventHandler(async (event): Promise<SessionListItem[]> => {
     projectId: s.projectId || null,
     branch: s.branch || null,
     worktrees: s.worktrees || {},
-    messages: s.messages,
+    conversations: s.conversations || [],
     hasActiveQuery: activeSet.has(s.id),
   }));
 });

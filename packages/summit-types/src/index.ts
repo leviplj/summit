@@ -7,7 +7,6 @@ export interface ChatMessage {
   role: "user" | "assistant" | "error";
   content: string;
   meta?: ChatMessageMeta;
-  agentId?: string;
 }
 
 export interface ChatMessageMeta {
@@ -17,6 +16,14 @@ export interface ChatMessageMeta {
 }
 
 export type SessionStatus = "idle" | "waiting" | "thinking" | "streaming" | "tool" | "elicitation" | "ask_user" | "error";
+
+export interface Conversation {
+  id: string;
+  role: string;
+  status: "idle" | "working" | "done" | "error" | "cancelled";
+  messages: ChatMessage[];
+  model?: string;
+}
 
 export interface StoredSession {
   id: string;
@@ -29,7 +36,7 @@ export interface StoredSession {
   branch: string | null;
   worktrees: Record<string, string>;
   channelMeta?: Record<string, unknown>;
-  messages: ChatMessage[];
+  conversations: Conversation[];
   createdAt: string;
   updatedAt: string;
 }
@@ -42,7 +49,7 @@ export interface SessionListItem {
   projectId: string | null;
   branch: string | null;
   worktrees: Record<string, string>;
-  messages: ChatMessage[];
+  conversations: Conversation[];
   hasActiveQuery: boolean;
 }
 
@@ -62,7 +69,12 @@ export interface AppEvent {
     | "done"
     | "elicitation"
     | "ask_user"
-    | "cancelled";
+    | "cancelled"
+    | "team_created"
+    | "conversation_status"
+    | "conversation_message"
+    | "conversation_done"
+    | "turn_done";
   [key: string]: unknown;
 }
 
@@ -133,6 +145,16 @@ export interface FileChange {
 // Provider types
 // =============================================================================
 
+export interface BeforeQueryContext {
+  sessionId: string;
+  prompt: string;
+  source: string;
+  mcpServers?: Record<string, unknown>;
+  systemPromptSuffix?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+}
+
 export interface QueryContext {
   prompt: string;
   cwd: string;
@@ -143,6 +165,7 @@ export interface QueryContext {
   abortSignal: AbortSignal;
   mcpServers?: Record<string, unknown>;
   allowedTools?: string[];
+  disallowedTools?: string[];
 }
 
 export interface InteractionHooks {
@@ -222,7 +245,7 @@ export interface ExtensionAPI {
   /** Event bus access */
   events: {
     onQueryInit(listener: (sessionId: string, source: string) => void): () => void;
-    onBeforeQuery(hook: (ctx: { sessionId: string; prompt: string; source: string }) => void | Promise<void>): () => void;
+    onBeforeQuery(hook: (ctx: BeforeQueryContext) => void | Promise<void>): () => void;
     onGlobal(listener: (event: GlobalEvent) => void): () => void;
     subscribe(sessionId: string, afterId: number): AsyncIterable<StreamEvent> | null;
     emit(sessionId: string, data: AppEvent): void;
@@ -232,7 +255,7 @@ export interface ExtensionAPI {
   /** Query management */
   queries: {
     start(sessionId: string, text: string, source?: string): Promise<void>;
-    run(sessionId: string, prompt: string, opts: { agentId: string; source?: string }): Promise<void>;
+    run(sessionId: string, prompt: string, opts: { conversationId: string; source?: string; mcpServers?: Record<string, unknown>; systemPrompt?: string; model?: string }): Promise<void>;
     getActive(sessionId: string): ActiveQuery | undefined;
   };
 
@@ -243,8 +266,8 @@ export interface ExtensionAPI {
 
   /** Interaction resolution */
   interactions: {
-    resolveAskUser(sessionId: string, answers: Record<string, string>, askId?: string): boolean;
-    createPendingAskUser(sessionId: string, source: string, askId?: string): Promise<Record<string, string>>;
+    resolveAskUser(sessionId: string, answers: Record<string, string>, conversationId?: string): boolean;
+    createPendingAskUser(sessionId: string, source: string, conversationId?: string): Promise<Record<string, string>>;
   };
 
   /** Worktree management */

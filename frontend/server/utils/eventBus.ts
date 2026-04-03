@@ -1,4 +1,4 @@
-import type { AppEvent } from "summit-types";
+import type { AppEvent, BeforeQueryContext } from "summit-types";
 import { EventStream } from "./EventStream";
 
 export interface StreamEvent {
@@ -18,9 +18,16 @@ const active = new Map<string, ActiveQuery>();
 const abortControllers = new Map<string, AbortController>();
 const streamHolds = new Map<string, number>();
 
+// TODO: evaluate whether this timeout is needed. Currently it silently kills
+// long-running teammates without notifying the frontend (leaves spinners stuck).
+// Teammates already abort via linked signal on user cancel, and provider errors
+// are caught by the .catch handler. This only guards against a query that hangs
+// forever without resolving or rejecting — unclear if that actually happens.
+// If kept, it needs to emit error events to the frontend before releasing.
 const HOLD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const streamReleaseCallbacks = new Map<string, Array<() => void>>();
 const queryInitListeners = new Set<(sessionId: string, source: string) => void>();
-const beforeQueryHooks = new Set<(ctx: { sessionId: string; prompt: string; source: string }) => void | Promise<void>>();
+const beforeQueryHooks = new Set<(ctx: BeforeQueryContext) => void | Promise<void>>();
 
 /** Register a callback invoked whenever a new query is initialized. */
 export function onQueryInit(listener: (sessionId: string, source: string) => void): () => void {
@@ -29,13 +36,13 @@ export function onQueryInit(listener: (sessionId: string, source: string) => voi
 }
 
 /** Register a hook invoked before each query executes (after initQuery, before provider.runQuery). */
-export function onBeforeQuery(hook: (ctx: { sessionId: string; prompt: string; source: string }) => void | Promise<void>): () => void {
+export function onBeforeQuery(hook: (ctx: BeforeQueryContext) => void | Promise<void>): () => void {
   beforeQueryHooks.add(hook);
   return () => beforeQueryHooks.delete(hook);
 }
 
-/** Fire all onBeforeQuery hooks. Errors are logged but don't block the query. */
-export async function fireBeforeQueryHooks(ctx: { sessionId: string; prompt: string; source: string }): Promise<void> {
+/** Fire all onBeforeQuery hooks. Hooks can mutate ctx to inject mcpServers/systemPromptSuffix. */
+export async function fireBeforeQueryHooks(ctx: BeforeQueryContext): Promise<void> {
   await Promise.all(
     Array.from(beforeQueryHooks).map((hook) =>
       Promise.resolve(hook(ctx)).catch((err) =>
@@ -136,6 +143,12 @@ export function holdStream(sessionId: string): (() => void) | null {
     const holds = (streamHolds.get(sessionId) ?? 1) - 1;
     if (holds <= 0) {
       streamHolds.delete(sessionId);
+      // Fire any registered release callbacks
+      const callbacks = streamReleaseCallbacks.get(sessionId);
+      if (callbacks) {
+        streamReleaseCallbacks.delete(sessionId);
+        for (const cb of callbacks) cb();
+      }
       // If finalize was already called (done=true), now actually close the stream
       const q = active.get(sessionId);
       if (q?.done) {
@@ -148,6 +161,18 @@ export function holdStream(sessionId: string): (() => void) | null {
   };
 
   return release;
+}
+
+/** Check if a session has active stream holds (teammates still running). */
+export function hasStreamHolds(sessionId: string): boolean {
+  return (streamHolds.get(sessionId) ?? 0) > 0;
+}
+
+/** Register a callback to fire when all stream holds for a session are released. */
+export function onStreamFullyReleased(sessionId: string, callback: () => void): void {
+  const existing = streamReleaseCallbacks.get(sessionId) ?? [];
+  existing.push(callback);
+  streamReleaseCallbacks.set(sessionId, existing);
 }
 
 export function finalize(sessionId: string) {

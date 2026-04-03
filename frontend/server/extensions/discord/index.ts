@@ -164,7 +164,7 @@ async function handleChannelMessage(api: ExtensionAPI, message: Message) {
       channelId: message.channel.id,
       guildId: message.guild?.id ?? "",
     }),
-    messages: [],
+    conversations: [{ id: "lead", role: "lead", status: "idle" as const, messages: [] }],
     createdAt: now,
     updatedAt: now,
   };

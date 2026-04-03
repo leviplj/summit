@@ -7,6 +7,7 @@ import type { ExtensionFactory } from "./types";
 // Bundled extensions are statically imported since Nitro bundles everything
 import discordExtension from "./discord";
 import claudeCodeExtension from "./claude-code";
+import teamsExtension from "./teams";
 
 interface ExtensionEntry {
   name: string;
@@ -24,6 +25,7 @@ const GLOBAL_DIR = join(homedir(), ".summit", "extensions");
 const BUNDLED: ExtensionEntry[] = [
   { name: "claude-code", factory: claudeCodeExtension },
   { name: "discord", factory: discordExtension },
+  { name: "teams", factory: teamsExtension },
 ];
 
 async function listFiles(dir: string, ext: string[]): Promise<string[]> {

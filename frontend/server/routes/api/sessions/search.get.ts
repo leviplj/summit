@@ -7,7 +7,8 @@ export default defineEventHandler(async (event) => {
   const results: { sessionId: string; snippet: string }[] = [];
 
   for (const session of sessions) {
-    for (const msg of session.messages) {
+    const allMessages = session.conversations.flatMap((c) => c.messages);
+    for (const msg of allMessages) {
       const idx = msg.content.toLowerCase().indexOf(q);
       if (idx !== -1) {
         const start = Math.max(0, idx - 40);

@@ -15,7 +15,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "summit-types": "workspace:*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.81",
     "@nuxtjs/color-mode": "^4.0.0",
     "@nuxtjs/tailwindcss": "^6.14.0",
@@ -29,9 +28,11 @@
     "nuxt": "^4.4.2",
     "radix-vue": "^1.9.17",
     "shadcn-nuxt": "^2.4.3",
+    "summit-types": "workspace:*",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.30",
-    "vue-router": "^5.0.4"
+    "vue-router": "^5.0.4",
+    "zod": "^4.3.6"
   }
 }

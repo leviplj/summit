@@ -1,9 +1,14 @@
 import { readFile, writeFile, readdir, unlink, mkdir } from "fs/promises";
 import { join } from "path";
-import type { StoredSession } from "summit-types";
+import type { StoredSession, Conversation } from "summit-types";
 import { emitGlobal } from "./eventBus";
 
 export type { StoredSession };
+
+/** Create the default lead conversation for a new session */
+export function createLeadConversation(): Conversation {
+  return { id: "lead", role: "lead", status: "idle", messages: [] };
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SESSIONS_DIR = join(process.cwd(), ".summit", "sessions");

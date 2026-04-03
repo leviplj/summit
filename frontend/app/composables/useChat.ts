@@ -1,5 +1,5 @@
 import type { AppEvent } from "summit-types";
-import type { ClientSession } from "./useSessionStore";
+import type { ClientSession, ClientConversation } from "./useSessionStore";
 
 export type { SessionStatus } from "summit-types";
 
@@ -27,11 +27,77 @@ export function useChat() {
   const { connect } = useStream();
   const model = ref("");
 
-  // Per-session streaming state (ephemeral, not persisted)
+  // Per-conversation streaming state keyed by "sessionId:conversationId"
   const streamState = new Map<string, { msgId: string; text: string }>();
 
+  function streamKey(sessionId: string, conversationId: string = "lead"): string {
+    return `${sessionId}:${conversationId}`;
+  }
+
+  function getSession(id: string): ClientSession | undefined {
+    return store.sessions.value.find((s: ClientSession) => s.id === id);
+  }
+
   function handleEvent(session: ClientSession, event: AppEvent) {
-    const state = streamState.get(session.id);
+    // Team lifecycle: team_created creates conversation tabs
+    if (event.type === "team_created") {
+      const roster = event.teammates as Array<{ id: string; role: string }>;
+      for (const t of roster) {
+        store.ensureConversation(session.id, t.id, t.role);
+      }
+      // Set active conversation to lead (orchestrator view)
+      if (session.activeConversationId === "lead") {
+        session.activeConversationId = "lead";
+      }
+      return;
+    }
+
+    // Conversation lifecycle events
+    if (event.type === "conversation_status") {
+      const conv = store.ensureConversation(
+        session.id,
+        event.conversationId as string,
+        event.conversationRole as string,
+      );
+      if (conv) conv.status = event.status as ClientConversation["status"];
+      return;
+    }
+
+    if (event.type === "conversation_done") {
+      const conv = store.ensureConversation(
+        session.id,
+        event.conversationId as string,
+        event.conversationRole as string,
+      );
+      if (conv) conv.status = "done";
+      return;
+    }
+
+    if (event.type === "conversation_message") {
+      const from = event.from as string;
+      const to = event.to as string;
+      const content = event.content as string;
+      for (const id of [from, to]) {
+        const conv = session.conversations.find((c) => c.id === id);
+        if (conv) {
+          conv.messages.push({
+            id: uid(),
+            role: "assistant",
+            content: `**${from}** → **${to}**: ${content}`,
+          });
+        }
+      }
+      return;
+    }
+
+    // Determine target conversation
+    const conversationId = (event.conversationId as string) || "lead";
+    const conv = store.ensureConversation(session.id, conversationId);
+    if (!conv) return;
+
+    const isLead = conversationId === "lead";
+    const sk = streamKey(session.id, conversationId);
+    const state = streamState.get(sk);
 
     switch (event.type) {
       case "init":
@@ -39,15 +105,15 @@ export function useChat() {
         break;
 
       case "thinking":
-        session.status = "thinking";
-        session.events.push({ id: uid(), type: "thinking", label: "Thinking" });
+        if (isLead) session.status = "thinking";
+        conv.events.push({ id: uid(), type: "thinking", label: "Thinking" });
         break;
 
       case "tool_use":
-        session.status = event.tool === "AskUserQuestion" ? "ask_user" : "tool";
-        session.events = session.events.filter((e) => e.type !== "thinking");
+        if (isLead) session.status = event.tool === "AskUserQuestion" ? "ask_user" : "tool";
+        conv.events = conv.events.filter((e) => e.type !== "thinking");
         if (event.tool !== "AskUserQuestion") {
-          session.events.push({
+          conv.events.push({
             id: uid(),
             type: "tool_use",
             label: formatToolUse(event.tool as string, event.input as Record<string, any>),
@@ -56,7 +122,7 @@ export function useChat() {
         break;
 
       case "tool_result":
-        session.events.push({
+        conv.events.push({
           id: uid(),
           type: "tool_result",
           label: (event.content as string) || (event.is_error ? "Error" : "Done"),
@@ -64,25 +130,25 @@ export function useChat() {
         });
         break;
 
-      case "text":
+      case "text": {
         if (!state) break;
-        session.status = "streaming";
-        session.events = session.events.filter((e) => e.type !== "thinking");
+        if (isLead) session.status = "streaming";
+        conv.events = conv.events.filter((e) => e.type !== "thinking");
         state.text += event.text as string;
-        {
-          const existing = session.messages.find((m) => m.id === state.msgId);
-          if (existing) {
-            existing.content = state.text;
-          } else {
-            session.messages.push({ id: state.msgId, role: "assistant", content: state.text });
-          }
+        conv.streamText = state.text;
+        const existing = conv.messages.find((m) => m.id === state.msgId);
+        if (existing) {
+          existing.content = state.text;
+        } else {
+          conv.messages.push({ id: state.msgId, role: "assistant", content: state.text });
         }
         break;
+      }
 
       case "result":
         if (!state) break;
         if (!event.is_error && event.text) {
-          const m = session.messages.find((m) => m.id === state.msgId);
+          const m = conv.messages.find((m) => m.id === state.msgId);
           if (m) {
             m.content = event.text as string;
             m.meta = {
@@ -92,95 +158,142 @@ export function useChat() {
             };
           }
         }
+        if (isLead) {
+          session.loading = false;
+          session.status = "idle";
+        }
+        conv.events = [];
+        break;
+
+      case "turn_done":
+        // Orchestrator finished but teammates may still be active
         session.loading = false;
         session.status = "idle";
-        session.events = [];
+        conv.events = [];
+        streamState.delete(sk);
         break;
 
       case "done":
-        session.loading = false;
-        session.status = "idle";
-        session.events = [];
-        session.askUser = null;
-        session.elicitation = null;
-        streamState.delete(session.id);
-        store.reloadSession(session.id);
+        if (isLead) {
+          session.loading = false;
+          session.status = "idle";
+          session.elicitation = null;
+          // Clear all stream state for this session
+          for (const key of streamState.keys()) {
+            if (key.startsWith(`${session.id}:`)) streamState.delete(key);
+          }
+          store.reloadSession(session.id);
+        } else {
+          conv.events = [];
+          streamState.delete(sk);
+        }
         break;
 
       case "ask_user":
         session.status = "ask_user";
-        session.events = session.events.filter((e) => e.type !== "thinking");
-        session.askUser = (event.questions as any[]) || [];
+        conv.events = conv.events.filter((e) => e.type !== "thinking");
+        conv.askUser = (event.questions as any[]) || [];
         break;
 
       case "elicitation":
-        session.status = "elicitation";
-        session.events = session.events.filter((e) => e.type !== "thinking");
-        session.elicitation = {
-          id: event.elicitationId as string,
-          serverName: event.serverName as string,
-          message: event.message as string,
-          schema: event.schema as Record<string, unknown> | undefined,
-        };
+        if (isLead) {
+          session.status = "elicitation";
+          conv.events = conv.events.filter((e) => e.type !== "thinking");
+          session.elicitation = {
+            id: event.elicitationId as string,
+            serverName: event.serverName as string,
+            message: event.message as string,
+            schema: event.schema as Record<string, unknown> | undefined,
+          };
+        }
         break;
 
       case "cancelled":
-        session.loading = false;
-        session.status = "idle";
-        session.events = [];
+        if (isLead) {
+          session.loading = false;
+          session.status = "idle";
+        }
+        conv.events = [];
         break;
 
       case "error":
-        session.events = session.events.filter((e) => e.type !== "thinking");
-        session.messages.push({ id: uid(), role: "error", content: event.text as string });
-        session.loading = false;
-        session.status = "error";
+        conv.events = conv.events.filter((e) => e.type !== "thinking");
+        conv.messages.push({ id: uid(), role: "error", content: event.text as string });
+        if (isLead) {
+          session.loading = false;
+          session.status = "error";
+        }
         break;
     }
   }
 
-  function startStreaming(session: ClientSession, afterId = 0) {
-    if (!streamState.has(session.id)) {
-      streamState.set(session.id, { msgId: uid(), text: "" });
+  function startStreaming(sessionId: string, afterId = 0) {
+    const sk = streamKey(sessionId, "lead");
+    if (!streamState.has(sk)) {
+      streamState.set(sk, { msgId: uid(), text: "" });
     }
 
     connect(
-      session.id,
+      sessionId,
       afterId,
-      (event) => handleEvent(session, event),
+      (event) => {
+        const session = getSession(sessionId);
+        if (!session) return;
+
+        // Ensure stream state exists for conversation-scoped events
+        const conversationId = (event.conversationId as string) || "lead";
+        const csk = streamKey(sessionId, conversationId);
+        if (!streamState.has(csk) && conversationId !== "lead") {
+          streamState.set(csk, { msgId: uid(), text: "" });
+        }
+
+        handleEvent(session, event);
+      },
       () => {
-        // Stream ended cleanly
-        if (session.loading) {
+        const session = getSession(sessionId);
+        if (session?.loading) {
           session.loading = false;
           session.status = "idle";
         }
-        streamState.delete(session.id);
+        for (const key of streamState.keys()) {
+          if (key.startsWith(`${sessionId}:`)) streamState.delete(key);
+        }
       },
       (lastId) => {
-        // Disconnected — reconnect if still loading
-        if (session.loading) {
-          setTimeout(() => startStreaming(session, lastId + 1), 1000);
+        const session = getSession(sessionId);
+        if (session?.loading) {
+          setTimeout(() => startStreaming(sessionId, lastId + 1), 1000);
         } else {
-          streamState.delete(session.id);
+          for (const key of streamState.keys()) {
+            if (key.startsWith(`${sessionId}:`)) streamState.delete(key);
+          }
         }
       },
     );
   }
 
-  async function respondAskUser(answers: Record<string, string>) {
+  async function respondAskUser(answers: Record<string, string>, conversationId?: string) {
     const session = store.activeSession.value;
-    if (!session?.askUser) return;
+    if (!session) return;
 
-    session.askUser = null;
-    session.status = "waiting";
+    const conv = store.getConversation(session.id, conversationId || "lead");
+    if (!conv?.askUser) return;
+    conv.askUser = null;
+
+    // If no other conversation still needs input, clear the session-level status
+    const anyAskUser = session.conversations.some((c) => c.askUser);
+    if (!anyAskUser) {
+      session.status = "waiting";
+    }
 
     try {
       await $fetch(`/api/sessions/${session.id}/ask-user`, {
         method: "POST",
-        body: { answers },
+        body: { answers, ...(conversationId ? { conversationId } : {}) },
       });
     } catch (err: any) {
-      session.messages.push({ id: uid(), role: "error", content: err.message });
+      const lead = store.getConversation(session.id, "lead");
+      if (lead) lead.messages.push({ id: uid(), role: "error", content: err.message });
       session.loading = false;
       session.status = "error";
     }
@@ -200,7 +313,8 @@ export function useChat() {
         body: { elicitationId, action, content },
       });
     } catch (err: any) {
-      session.messages.push({ id: uid(), role: "error", content: err.message });
+      const lead = store.getConversation(session.id, "lead");
+      if (lead) lead.messages.push({ id: uid(), role: "error", content: err.message });
       session.loading = false;
       session.status = "error";
     }
@@ -222,15 +336,20 @@ export function useChat() {
     const session = store.activeSession.value;
     if (!session || session.loading) return;
 
-    // Wait for server-side session creation (worktree setup) to complete
     await store.waitForCreation(session.id);
 
-    session.messages.push({ id: uid(), role: "user", content: text });
+    // Clear teammate conversations from prior query
+    store.clearTeammateConversations(session.id);
+
+    const lead = session.conversations.find((c) => c.id === "lead");
+    if (!lead) return;
+
+    lead.messages.push({ id: uid(), role: "user", content: text });
     session.loading = true;
     session.status = "waiting";
-    session.events = [];
+    lead.events = [];
 
-    if (session.messages.filter((m) => m.role === "user").length === 1) {
+    if (lead.messages.filter((m) => m.role === "user").length === 1) {
       session.title = text.length > 40 ? text.slice(0, 40) + "…" : text;
     }
 
@@ -240,54 +359,59 @@ export function useChat() {
         body: { text, sessionId: session.id },
       });
     } catch (err: any) {
-      session.messages.push({ id: uid(), role: "error", content: err.message });
+      lead.messages.push({ id: uid(), role: "error", content: err.message });
       session.loading = false;
       session.status = "error";
       return;
     }
 
-    startStreaming(session);
+    startStreaming(session.id);
   }
 
   onMounted(async () => {
     const sessionsWithStatus = await store.loadSessions();
-    // Only reconnect sessions that actually have active server-side queries
     for (const { session, hasActiveQuery } of sessionsWithStatus) {
       if (hasActiveQuery) {
         session.loading = true;
         session.status = "waiting";
-        startStreaming(session);
+        startStreaming(session.id);
       }
     }
   });
 
-  // Refetch session list when sessions are created/deleted externally (e.g. Discord)
   useGlobalEvents(async () => {
     const sessionsWithStatus = await store.loadSessions();
     for (const { session, hasActiveQuery } of sessionsWithStatus) {
-      if (hasActiveQuery && !streamState.has(session.id)) {
+      if (hasActiveQuery && !streamState.has(streamKey(session.id, "lead"))) {
         session.loading = true;
         session.status = "waiting";
-        startStreaming(session);
+        startStreaming(session.id);
       }
     }
   });
 
   const sessionCost = computed(() => {
-    const msgs = store.activeSession.value?.messages;
-    if (!msgs) return null;
+    const convs = store.activeSession.value?.conversations;
+    if (!convs) return null;
     let totalCost = 0;
     let totalTokens = 0;
     let hasCost = false;
-    for (const m of msgs) {
-      if (m.meta?.cost_usd) { totalCost += m.meta.cost_usd; hasCost = true; }
-      if (m.meta?.output_tokens) { totalTokens += m.meta.output_tokens; }
+    for (const conv of convs) {
+      for (const m of conv.messages) {
+        if (m.meta?.cost_usd) { totalCost += m.meta.cost_usd; hasCost = true; }
+        if (m.meta?.output_tokens) { totalTokens += m.meta.output_tokens; }
+      }
     }
     return hasCost ? { totalCost, totalTokens } : null;
   });
 
+  function selectSession(id: string) {
+    store.selectSession(id);
+  }
+
   return {
     ...store,
+    selectSession,
     model,
     sessionCost,
     send,
