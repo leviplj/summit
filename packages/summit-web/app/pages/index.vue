@@ -36,8 +36,9 @@ async function handleDelete(id: string) {
 
 <template>
   <div class="max-w-2xl mx-auto p-8">
-    <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold">Projects</h1>
+    <div class="flex items-center gap-3 mb-6">
+      <img src="/logo.png" alt="Summit" class="w-8 h-8 rounded" />
+      <h1 class="text-2xl font-bold flex-1">Projects</h1>
       <Dialog v-model:open="showDialog">
         <DialogTrigger as-child>
           <Button size="sm">
