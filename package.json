@@ -1,4 +1,7 @@
 {
   "private": true,
-  "workspaces": ["packages/*", "frontend"]
+  "workspaces": ["packages/*", "frontend"],
+  "scripts": {
+    "dev:web": "bun --filter summit-web dev"
+  }
 }

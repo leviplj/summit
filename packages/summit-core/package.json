@@ -1,0 +1,17 @@
+{
+  "name": "summit-core",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "files": ["src"],
+  "dependencies": {
+    "@types/node": "^25.5.2",
+    "summit-types": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
