@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import type { Project } from "summit-types";
 
-defineProps<{ projects: Project[]; loaded: boolean; activeId: string | null }>();
+defineProps<{
+  projects: Project[];
+  loaded: boolean;
+  activeId: string | null;
+  activeSessionId: string | null;
+}>();
 defineEmits<{
   select: [id: string];
   delete: [id: string];
+  selectSession: [id: string];
   create: [{ name: string; icon: string; repos: Array<{ name: string; path: string }> }];
 }>();
 </script>
@@ -20,8 +26,10 @@ defineEmits<{
       :projects="projects"
       :loaded="loaded"
       :active-id="activeId"
+      :active-session-id="activeSessionId"
       @select="$emit('select', $event)"
       @delete="$emit('delete', $event)"
+      @select-session="$emit('selectSession', $event)"
     />
 
     <div class="p-2 border-t border-border">

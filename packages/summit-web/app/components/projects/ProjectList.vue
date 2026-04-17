@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import type { Project } from "summit-types";
 
-defineProps<{ projects: Project[]; loaded: boolean; activeId: string | null }>();
-defineEmits<{ select: [id: string]; delete: [id: string] }>();
+defineProps<{
+  projects: Project[];
+  loaded: boolean;
+  activeId: string | null;
+  activeSessionId: string | null;
+}>();
+defineEmits<{
+  select: [id: string];
+  delete: [id: string];
+  selectSession: [id: string];
+}>();
 </script>
 
 <template>
@@ -14,8 +23,10 @@ defineEmits<{ select: [id: string]; delete: [id: string] }>();
         :key="project.id"
         :project="project"
         :active="activeId === project.id"
+        :active-session-id="activeSessionId"
         @select="$emit('select', $event)"
         @delete="$emit('delete', $event)"
+        @select-session="$emit('selectSession', $event)"
       />
     </div>
     <p v-else class="text-xs text-muted-foreground p-2">No projects yet.</p>
