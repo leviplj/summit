@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { DEFAULT_MODEL_ID } from "~/constants/models";
-
 interface Draft {
   projectId: string;
+  provider: string;
   title: string;
   model: string;
 }
 
+const DEFAULT_PROVIDER = "claude-code";
+
 const { projects, loaded, loadProjects, createProject, deleteProject, reorderProjects } = useProjectStore();
-const { sessions, loadSessions, createSession, updateSession } = useSessionStore();
+const { sessions, loadSessions, createSession, updateSession, sendMessage } = useSessionStore();
+const { loadProviders, modelsFor, defaultModelFor } = useProviderStore();
 
 const activeProjectId = ref<string | null>(null);
 const activeSessionId = ref<string | null>(null);
 const draft = ref<Draft | null>(null);
+const pendingSessionIds = useState<Set<string>>("pendingSessionIds", () => new Set());
 
 const activeProject = computed(() =>
   projects.value.find((p) => p.id === activeProjectId.value) || null,
@@ -32,8 +35,28 @@ const draftProject = computed(() =>
   draft.value ? projects.value.find((p) => p.id === draft.value!.projectId) || null : null,
 );
 
+const activeMessages = computed(() => {
+  if (!activeSession.value) return [];
+  return activeSession.value.conversations.find((c) => c.id === "lead")?.messages ?? [];
+});
+
+const activePending = computed(() =>
+  activeSession.value ? pendingSessionIds.value.has(activeSession.value.id) : false,
+);
+
+const sessionModels = computed(() =>
+  activeSession.value ? modelsFor(activeSession.value.provider) : [],
+);
+
+const draftModels = computed(() =>
+  draft.value ? modelsFor(draft.value.provider) : [],
+);
+
 const sessionModel = computed({
-  get: () => activeSession.value?.model ?? DEFAULT_MODEL_ID,
+  get: () => {
+    if (!activeSession.value) return "";
+    return activeSession.value.model ?? defaultModelFor(activeSession.value.provider) ?? "";
+  },
   set: (value: string) => {
     if (activeSession.value) {
       updateSession(activeSession.value.id, { model: value });
@@ -42,7 +65,7 @@ const sessionModel = computed({
 });
 
 const draftModel = computed({
-  get: () => draft.value?.model ?? DEFAULT_MODEL_ID,
+  get: () => draft.value?.model ?? "",
   set: (value: string) => {
     if (draft.value) draft.value.model = value;
   },
@@ -51,6 +74,7 @@ const draftModel = computed({
 onMounted(() => {
   loadProjects();
   loadSessions();
+  loadProviders();
 });
 
 async function handleCreate(payload: { name: string; icon: string; repos: Array<{ name: string; path: string }> }) {
@@ -71,10 +95,12 @@ function handleSelectSession(id: string) {
 function handleNewSession(projectId: string) {
   activeSessionId.value = null;
   const time = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
+  const provider = DEFAULT_PROVIDER;
   draft.value = {
     projectId,
+    provider,
     title: `New session ${time}`,
-    model: DEFAULT_MODEL_ID,
+    model: defaultModelFor(provider) ?? "",
   };
 }
 
@@ -87,19 +113,34 @@ async function handleReorder(ids: string[]) {
   await reorderProjects(ids);
 }
 
-async function handleSessionSend(_text: string) {
-  // TODO: wire to chat engine
+async function runSend(sessionId: string, prompt: string) {
+  const next = new Set(pendingSessionIds.value);
+  next.add(sessionId);
+  pendingSessionIds.value = next;
+  try {
+    await sendMessage(sessionId, prompt);
+  } finally {
+    const done = new Set(pendingSessionIds.value);
+    done.delete(sessionId);
+    pendingSessionIds.value = done;
+  }
 }
 
-async function handleDraftSend(_text: string) {
+async function handleSessionSend(text: string) {
+  if (!activeSession.value) return;
+  await runSend(activeSession.value.id, text);
+}
+
+async function handleDraftSend(text: string) {
   if (!draft.value) return;
   const session = await createSession(draft.value.projectId, draft.value.title);
-  if (draft.value.model !== DEFAULT_MODEL_ID) {
+  const providerDefault = defaultModelFor(draft.value.provider);
+  if (draft.value.model && draft.value.model !== providerDefault) {
     await updateSession(session.id, { model: draft.value.model });
   }
   activeSessionId.value = session.id;
   draft.value = null;
-  // TODO: send message to chat engine
+  await runSend(session.id, text);
 }
 </script>
 
@@ -124,6 +165,9 @@ async function handleDraftSend(_text: string) {
       v-model:model="sessionModel"
       :title="activeSession.title"
       :project-name="sessionProject?.name"
+      :messages="activeMessages"
+      :pending="activePending"
+      :models="sessionModels"
       @send="handleSessionSend"
     />
     <SessionDetail
@@ -132,6 +176,8 @@ async function handleDraftSend(_text: string) {
       v-model:model="draftModel"
       :title="draft.title"
       :project-name="draftProject?.name"
+      :messages="[]"
+      :models="draftModels"
       @send="handleDraftSend"
     />
     <main v-else class="flex-1 flex items-center justify-center text-muted-foreground">

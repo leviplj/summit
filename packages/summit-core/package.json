@@ -8,6 +8,7 @@
   "types": "./src/index.ts",
   "files": ["src"],
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.112",
     "@types/node": "^25.5.2",
     "summit-types": "workspace:*"
   },

@@ -36,6 +36,16 @@ export function useSessionStore() {
     return updated;
   }
 
+  async function sendMessage(id: string, prompt: string) {
+    const { session } = await $fetch<{ session: StoredSession }>(`/api/sessions/${id}/chat`, {
+      method: "POST",
+      body: { prompt },
+    });
+    const idx = sessions.value.findIndex((s) => s.id === id);
+    if (idx >= 0) sessions.value[idx] = session;
+    return session;
+  }
+
   function sessionsForProject(projectId: string) {
     return computed(() => sessions.value.filter((s) => s.projectId === projectId));
   }
@@ -47,6 +57,7 @@ export function useSessionStore() {
     createSession,
     deleteSession,
     updateSession,
+    sendMessage,
     sessionsForProject,
   };
 }
