@@ -1,5 +1,7 @@
 import { getSession, getProvider, saveSession } from "summit-core";
-import type { ChatMessage, Conversation, StoredSession, QueryContext, InteractionHooks } from "summit-types";
+import type { AgentProvider, ChatMessage, Conversation, StoredSession, QueryContext, InteractionHooks } from "summit-types";
+
+const DEFAULT_TITLE_RE = /^New session \d{2}-\d{2}-\d{2}$/;
 
 function ensureLeadConversation(session: StoredSession): Conversation {
   let lead = session.conversations.find((c) => c.id === "lead");
@@ -8,6 +10,19 @@ function ensureLeadConversation(session: StoredSession): Conversation {
     session.conversations.push(lead);
   }
   return lead;
+}
+
+async function generateTitle(provider: AgentProvider, firstPrompt: string): Promise<string | null> {
+  try {
+    const titlePrompt = `Generate a concise 3-6 word title for a conversation that starts with this user message. Respond with only the title, no quotes, no trailing punctuation, no prefix.
+
+Message: ${firstPrompt}`;
+    const raw = await provider.complete(titlePrompt);
+    const title = raw.trim().replace(/^["'`]|["'`]$/g, "").replace(/\.$/, "").slice(0, 80);
+    return title || null;
+  } catch {
+    return null;
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -87,6 +102,13 @@ export default defineEventHandler(async (event) => {
   lead.messages.push(assistantMessage);
   lead.status = "idle";
   if (newAgentSessionId) session.agentSessionId = newAgentSessionId;
+
+  const isFirstExchange = lead.messages.length === 2;
+  if (isFirstExchange && DEFAULT_TITLE_RE.test(session.title)) {
+    const title = await generateTitle(provider, prompt);
+    if (title) session.title = title;
+  }
+
   await saveSession(session);
 
   return { message: assistantMessage, session };
