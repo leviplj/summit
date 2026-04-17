@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRight, Plus, Trash2 } from "lucide-vue-next";
+import { ChevronRight, GripVertical, Plus, Trash2 } from "lucide-vue-next";
 import type { Project } from "summit-types";
 import { getProjectIcon } from "~/lib/projectIcons";
 
@@ -10,7 +10,8 @@ const emit = defineEmits<{
   selectSession: [id: string];
 }>();
 
-const expanded = ref(true);
+const { isExpanded, toggle } = useProjectExpansion();
+const expanded = computed(() => isExpanded(props.project.id));
 const icon = computed(() => getProjectIcon(props.project.icon));
 
 const { sessionsForProject, createSession, deleteSession } = useSessionStore();
@@ -18,7 +19,7 @@ const sessions = sessionsForProject(props.project.id);
 
 async function handleNewSession() {
   const session = await createSession(props.project.id);
-  expanded.value = true;
+  if (!expanded.value) toggle(props.project.id);
   emit("selectSession", session.id);
 }
 
@@ -36,10 +37,13 @@ async function handleDeleteSession(id: string) {
         active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
       ]"
     >
+      <GripVertical
+        class="drag-handle w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 hover:!opacity-100 cursor-grab active:cursor-grabbing transition-opacity"
+      />
       <button
         class="p-0.5 rounded hover:bg-accent"
         :aria-label="expanded ? 'Collapse' : 'Expand'"
-        @click="expanded = !expanded"
+        @click="toggle(project.id)"
       >
         <ChevronRight
           :class="['w-3.5 h-3.5 text-muted-foreground transition-transform', expanded && 'rotate-90']"

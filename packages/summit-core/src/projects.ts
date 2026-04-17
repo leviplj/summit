@@ -14,7 +14,12 @@ function getStore() {
 
 export async function listProjects(): Promise<Project[]> {
   const projects = await getStore().list();
-  return projects.sort((a, b) => a.name.localeCompare(b.name));
+  return projects.sort((a, b) => {
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 export async function getProject(id: string): Promise<Project | null> {
@@ -28,4 +33,19 @@ export async function saveProject(project: Project): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   await getStore().remove(id);
+}
+
+export async function reorderProjects(ids: string[]): Promise<void> {
+  const all = await getStore().list();
+  const byId = new Map(all.map((p) => [p.id, p]));
+  const now = new Date().toISOString();
+  await Promise.all(
+    ids.map(async (id, index) => {
+      const project = byId.get(id);
+      if (!project) return;
+      project.order = index;
+      project.updatedAt = now;
+      await getStore().save(project);
+    }),
+  );
 }

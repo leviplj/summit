@@ -28,11 +28,19 @@ export function useProjectStore() {
     projects.value = projects.value.filter((p) => p.id !== id);
   }
 
+  async function reorderProjects(ids: string[]) {
+    await $fetch("/api/projects/reorder", {
+      method: "POST",
+      body: { ids },
+    });
+  }
+
   return {
     projects,
     loaded,
     loadProjects,
     createProject,
     deleteProject,
+    reorderProjects,
   };
 }

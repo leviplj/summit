@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { projects, loaded, loadProjects, createProject, deleteProject } = useProjectStore();
+const { projects, loaded, loadProjects, createProject, deleteProject, reorderProjects } = useProjectStore();
 const { sessions, loadSessions } = useSessionStore();
 
 const activeProjectId = ref<string | null>(null);
@@ -31,6 +31,15 @@ async function handleDelete(id: string) {
 function handleSelectSession(id: string) {
   activeSessionId.value = id || null;
 }
+
+async function handleReorder(ids: string[]) {
+  const byId = new Map(projects.value.map((p) => [p.id, p]));
+  projects.value = ids.map((id, i) => {
+    const p = byId.get(id)!;
+    return { ...p, order: i };
+  });
+  await reorderProjects(ids);
+}
 </script>
 
 <template>
@@ -43,6 +52,7 @@ function handleSelectSession(id: string) {
       @select="activeProjectId = $event"
       @delete="handleDelete"
       @select-session="handleSelectSession"
+      @reorder="handleReorder"
       @create="handleCreate"
     />
 

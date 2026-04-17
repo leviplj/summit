@@ -1,4 +1,4 @@
-import { saveProject } from "summit-core";
+import { listProjects, saveProject } from "summit-core";
 import type { Project } from "summit-types";
 
 export default defineEventHandler(async (event) => {
@@ -14,10 +14,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "At least one repo is required" });
   }
 
+  const existing = await listProjects();
   const project: Project = {
     id: crypto.randomUUID(),
     name: body.name.trim(),
     icon: body.icon,
+    order: existing.length,
     repos: body.repos,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

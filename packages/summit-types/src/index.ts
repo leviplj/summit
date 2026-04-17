@@ -223,6 +223,7 @@ export interface Project {
   id: string;
   name: string;
   icon?: string;
+  order?: number;
   repos: Array<{ name: string; path: string }>;
   createdAt: string;
   updatedAt: string;
