@@ -10,6 +10,7 @@ export default defineNuxtConfig({
     },
   },
   css: ["~/assets/main.css"],
+  components: [{ path: "~/components", pathPrefix: false }],
   modules: ["shadcn-nuxt", "@nuxtjs/color-mode"],
   shadcn: { prefix: "", componentDir: "./app/components/ui" },
   colorMode: { classSuffix: "" },

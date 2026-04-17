@@ -14,10 +14,10 @@ export function useProjectStore() {
     }
   }
 
-  async function createProject(name: string, repos: Array<{ name: string; path: string }>) {
+  async function createProject(input: { name: string; icon?: string; repos: Array<{ name: string; path: string }> }) {
     const project = await $fetch<Project>("/api/projects", {
       method: "POST",
-      body: { name, repos },
+      body: input,
     });
     projects.value.push(project);
     return project;

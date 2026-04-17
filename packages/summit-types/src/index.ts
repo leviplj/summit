@@ -222,6 +222,7 @@ export interface ElicitationPayload {
 export interface Project {
   id: string;
   name: string;
+  icon?: string;
   repos: Array<{ name: string; path: string }>;
   createdAt: string;
   updatedAt: string;
