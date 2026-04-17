@@ -12,6 +12,7 @@ defineEmits<{
   select: [id: string];
   delete: [id: string];
   selectSession: [id: string];
+  newSession: [projectId: string];
   reorder: [ids: string[]];
   create: [{ name: string; icon: string; repos: Array<{ name: string; path: string }> }];
 }>();
@@ -55,6 +56,7 @@ function toggleAll() {
       @select="$emit('select', $event)"
       @delete="$emit('delete', $event)"
       @select-session="$emit('selectSession', $event)"
+      @new-session="$emit('newSession', $event)"
       @reorder="$emit('reorder', $event)"
     />
 

@@ -1,37 +1,44 @@
 <script setup lang="ts">
 import { Send } from "lucide-vue-next";
-import type { StoredSession } from "summit-types";
-import { LATEST_MODELS, DEFAULT_MODEL_ID } from "~/constants/models";
+import { LATEST_MODELS } from "~/constants/models";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/components/ui/select";
 
-const props = defineProps<{ session: StoredSession }>();
+const model = defineModel<string>("model", { required: true });
 
-const { updateSession } = useSessionStore();
+const emit = defineEmits<{ send: [text: string] }>();
 
 const text = ref("");
-
-const model = computed({
-  get: () => props.session.model ?? DEFAULT_MODEL_ID,
-  set: (value: string) => {
-    updateSession(props.session.id, { model: value });
-  },
-});
 
 const modelLabel = computed(
   () => LATEST_MODELS.find((m) => m.id === model.value)?.label ?? "Model",
 );
+
+const canSend = computed(() => text.value.trim().length > 0);
+
+function handleSend() {
+  if (!canSend.value) return;
+  emit("send", text.value.trim());
+  text.value = "";
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    handleSend();
+  }
+}
 </script>
 
 <template>
   <footer class="border-t border-border p-4">
     <div class="max-w-3xl mx-auto">
-      <div class="rounded-lg border border-input bg-background">
+      <div class="rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
         <textarea
           v-model="text"
-          disabled
           rows="2"
           placeholder="Ask anything..."
-          class="w-full resize-none bg-transparent px-3 py-2 text-sm disabled:opacity-60 focus:outline-none"
+          class="w-full resize-none bg-transparent px-3 py-2 text-sm focus:outline-none"
+          @keydown="onKeydown"
         />
         <div class="flex items-center gap-2 px-2 py-1.5 border-t border-border">
           <Select v-model="model">
@@ -49,7 +56,7 @@ const modelLabel = computed(
 
           <div class="flex-1" />
 
-          <Button disabled size="icon" class="h-7 w-7">
+          <Button :disabled="!canSend" size="icon" class="h-7 w-7" @click="handleSend">
             <Send class="w-3.5 h-3.5" />
           </Button>
         </div>

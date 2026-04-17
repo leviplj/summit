@@ -12,6 +12,7 @@ const emit = defineEmits<{
   select: [id: string];
   delete: [id: string];
   selectSession: [id: string];
+  newSession: [projectId: string];
   reorder: [ids: string[]];
 }>();
 
@@ -52,6 +53,7 @@ function onEnd() {
         @select="emit('select', $event)"
         @delete="emit('delete', $event)"
         @select-session="emit('selectSession', $event)"
+        @new-session="emit('newSession', $event)"
       />
     </VueDraggable>
     <p v-else class="text-xs text-muted-foreground p-2">No projects yet.</p>

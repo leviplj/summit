@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import type { StoredSession, Project } from "summit-types";
+defineProps<{ title: string; projectName?: string }>();
 
-defineProps<{ session: StoredSession; project: Project | null }>();
+const model = defineModel<string>("model", { required: true });
+
+defineEmits<{ send: [text: string] }>();
 </script>
 
 <template>
   <div class="flex-1 flex flex-col min-w-0">
-    <SessionHeader :session="session" :project="project" />
+    <SessionHeader :title="title" :project-name="projectName" />
     <MessageList />
-    <MessageInput :session="session" />
+    <MessageInput v-model:model="model" @send="$emit('send', $event)" />
   </div>
 </template>

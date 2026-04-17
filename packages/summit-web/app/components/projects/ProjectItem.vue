@@ -8,19 +8,19 @@ const emit = defineEmits<{
   select: [id: string];
   delete: [id: string];
   selectSession: [id: string];
+  newSession: [projectId: string];
 }>();
 
 const { isExpanded, toggle } = useProjectExpansion();
 const expanded = computed(() => isExpanded(props.project.id));
 const icon = computed(() => getProjectIcon(props.project.icon));
 
-const { sessionsForProject, createSession, deleteSession } = useSessionStore();
+const { sessionsForProject, deleteSession } = useSessionStore();
 const sessions = sessionsForProject(props.project.id);
 
-async function handleNewSession() {
-  const session = await createSession(props.project.id);
+function handleNewSession() {
   if (!expanded.value) toggle(props.project.id);
-  emit("selectSession", session.id);
+  emit("newSession", props.project.id);
 }
 
 async function handleDeleteSession(id: string) {

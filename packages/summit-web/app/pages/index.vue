@@ -1,9 +1,18 @@
 <script setup lang="ts">
+import { DEFAULT_MODEL_ID } from "~/constants/models";
+
+interface Draft {
+  projectId: string;
+  title: string;
+  model: string;
+}
+
 const { projects, loaded, loadProjects, createProject, deleteProject, reorderProjects } = useProjectStore();
-const { sessions, loadSessions } = useSessionStore();
+const { sessions, loadSessions, createSession, updateSession } = useSessionStore();
 
 const activeProjectId = ref<string | null>(null);
 const activeSessionId = ref<string | null>(null);
+const draft = ref<Draft | null>(null);
 
 const activeProject = computed(() =>
   projects.value.find((p) => p.id === activeProjectId.value) || null,
@@ -18,6 +27,26 @@ const sessionProject = computed(() =>
     ? projects.value.find((p) => p.id === activeSession.value!.projectId) || null
     : null,
 );
+
+const draftProject = computed(() =>
+  draft.value ? projects.value.find((p) => p.id === draft.value!.projectId) || null : null,
+);
+
+const sessionModel = computed({
+  get: () => activeSession.value?.model ?? DEFAULT_MODEL_ID,
+  set: (value: string) => {
+    if (activeSession.value) {
+      updateSession(activeSession.value.id, { model: value });
+    }
+  },
+});
+
+const draftModel = computed({
+  get: () => draft.value?.model ?? DEFAULT_MODEL_ID,
+  set: (value: string) => {
+    if (draft.value) draft.value.model = value;
+  },
+});
 
 onMounted(() => {
   loadProjects();
@@ -35,7 +64,18 @@ async function handleDelete(id: string) {
 }
 
 function handleSelectSession(id: string) {
+  draft.value = null;
   activeSessionId.value = id || null;
+}
+
+function handleNewSession(projectId: string) {
+  activeSessionId.value = null;
+  const time = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
+  draft.value = {
+    projectId,
+    title: `New session ${time}`,
+    model: DEFAULT_MODEL_ID,
+  };
 }
 
 async function handleReorder(ids: string[]) {
@@ -45,6 +85,21 @@ async function handleReorder(ids: string[]) {
     return { ...p, order: i };
   });
   await reorderProjects(ids);
+}
+
+async function handleSessionSend(_text: string) {
+  // TODO: wire to chat engine
+}
+
+async function handleDraftSend(_text: string) {
+  if (!draft.value) return;
+  const session = await createSession(draft.value.projectId, draft.value.title);
+  if (draft.value.model !== DEFAULT_MODEL_ID) {
+    await updateSession(session.id, { model: draft.value.model });
+  }
+  activeSessionId.value = session.id;
+  draft.value = null;
+  // TODO: send message to chat engine
 }
 </script>
 
@@ -58,14 +113,26 @@ async function handleReorder(ids: string[]) {
       @select="activeProjectId = $event"
       @delete="handleDelete"
       @select-session="handleSelectSession"
+      @new-session="handleNewSession"
       @reorder="handleReorder"
       @create="handleCreate"
     />
 
     <SessionDetail
       v-if="activeSession"
-      :session="activeSession"
-      :project="sessionProject"
+      :key="activeSession.id"
+      v-model:model="sessionModel"
+      :title="activeSession.title"
+      :project-name="sessionProject?.name"
+      @send="handleSessionSend"
+    />
+    <SessionDetail
+      v-else-if="draft"
+      key="draft"
+      v-model:model="draftModel"
+      :title="draft.title"
+      :project-name="draftProject?.name"
+      @send="handleDraftSend"
     />
     <main v-else class="flex-1 flex items-center justify-center text-muted-foreground">
       <div v-if="activeProject" class="text-center">
