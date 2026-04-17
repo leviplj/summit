@@ -26,6 +26,16 @@ export function useSessionStore() {
     sessions.value = sessions.value.filter((s) => s.id !== id);
   }
 
+  async function updateSession(id: string, patch: Partial<Pick<StoredSession, "title" | "model">>) {
+    const updated = await $fetch<StoredSession>(`/api/sessions/${id}`, {
+      method: "PUT",
+      body: patch,
+    });
+    const idx = sessions.value.findIndex((s) => s.id === id);
+    if (idx >= 0) sessions.value[idx] = updated;
+    return updated;
+  }
+
   function sessionsForProject(projectId: string) {
     return computed(() => sessions.value.filter((s) => s.projectId === projectId));
   }
@@ -36,6 +46,7 @@ export function useSessionStore() {
     loadSessions,
     createSession,
     deleteSession,
+    updateSession,
     sessionsForProject,
   };
 }

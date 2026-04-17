@@ -13,6 +13,12 @@ const activeSession = computed(() =>
   sessions.value.find((s) => s.id === activeSessionId.value) || null,
 );
 
+const sessionProject = computed(() =>
+  activeSession.value
+    ? projects.value.find((p) => p.id === activeSession.value!.projectId) || null
+    : null,
+);
+
 onMounted(() => {
   loadProjects();
   loadSessions();
@@ -56,12 +62,13 @@ async function handleReorder(ids: string[]) {
       @create="handleCreate"
     />
 
-    <main class="flex-1 flex items-center justify-center text-muted-foreground">
-      <div v-if="activeSession" class="text-center">
-        <p class="text-sm">Session:</p>
-        <p class="font-medium text-foreground">{{ activeSession.title }}</p>
-      </div>
-      <div v-else-if="activeProject" class="text-center">
+    <SessionDetail
+      v-if="activeSession"
+      :session="activeSession"
+      :project="sessionProject"
+    />
+    <main v-else class="flex-1 flex items-center justify-center text-muted-foreground">
+      <div v-if="activeProject" class="text-center">
         <p class="text-sm">Selected project:</p>
         <p class="font-medium text-foreground">{{ activeProject.name }}</p>
       </div>

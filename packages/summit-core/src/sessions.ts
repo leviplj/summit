@@ -27,6 +27,17 @@ export async function saveSession(session: StoredSession): Promise<void> {
   await getStore().save(session);
 }
 
+export async function updateSession(
+  id: string,
+  patch: Partial<Omit<StoredSession, "id" | "createdAt">>,
+): Promise<StoredSession | null> {
+  const existing = await getStore().get(id);
+  if (!existing) return null;
+  const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+  await getStore().save(updated);
+  return updated;
+}
+
 export async function deleteSession(id: string): Promise<void> {
   await getStore().remove(id);
 }

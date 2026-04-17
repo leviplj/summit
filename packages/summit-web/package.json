@@ -18,7 +18,7 @@
     "lucide-vue-next": "^1.0.0",
     "nuxt": "^4.4.2",
     "radix-vue": "^1.9.17",
-    "reka-ui": "^2.9.5",
+    "reka-ui": "^2.9.6",
     "shadcn-nuxt": "^2.5.3",
     "summit-core": "workspace:*",
     "summit-types": "workspace:*",
